@@ -1,0 +1,244 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 45 42% 59%;
+    --primary-foreground: 0 0% 10%;
+    --secondary: 0 0% 97%;
+    --secondary-foreground: 0 0% 10%;
+    --muted: 0 0% 97%;
+    --muted-foreground: 0 0% 40%;
+    --accent: 45 42% 59%;
+    --accent-foreground: 0 0% 10%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 90%;
+    --input: 0 0% 83%;
+    --ring: 45 42% 59%;
+    --radius: 0;
+    
+    --gold: #C9A962;
+    --gold-dark: #B8A164;
+    --dark: #1A1A1A;
+    --gray-100: #F8F8F8;
+    --gray-200: #E5E5E5;
+    --gray-300: #D4D4D4;
+    --gray-500: #666666;
+    --gray-600: #999999;
+    --success: #22C55E;
+    --warning: #F59E0B;
+    --error: #EF4444;
+    --info: #3B82F6;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Playfair Display', Georgia, serif;
+    letter-spacing: -0.02em;
+  }
+  
+  code, pre, .mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-[#C9A962] text-[#1A1A1A] px-6 py-3 font-medium transition-all duration-200;
+  }
+  
+  .btn-primary:hover {
+    @apply bg-[#B8A164];
+    transform: scale(1.02);
+  }
+  
+  .btn-secondary {
+    @apply border border-[#C9A962] text-[#C9A962] px-6 py-3 font-medium transition-all duration-200 bg-transparent;
+  }
+  
+  .btn-secondary:hover {
+    @apply bg-[#C9A962] text-[#1A1A1A];
+  }
+  
+  .card {
+    @apply bg-white border border-[#E5E5E5] p-6;
+  }
+  
+  .card:hover {
+    @apply border-[#C9A962];
+    transform: translateY(-2px);
+    transition: all 0.2s ease;
+  }
+  
+  .input-field {
+    @apply w-full h-11 px-4 border border-[#D4D4D4] bg-white text-[#1A1A1A] placeholder:text-[#999999] transition-all duration-200;
+  }
+  
+  .input-field:focus {
+    @apply border-[#C9A962] outline-none ring-1 ring-[#C9A962];
+  }
+  
+  .section-title {
+    @apply text-xl font-semibold text-[#1A1A1A] mb-4;
+    font-family: 'Playfair Display', Georgia, serif;
+  }
+  
+  .form-label {
+    @apply text-xs uppercase tracking-wide text-[#666666] mb-1.5 block font-medium;
+  }
+  
+  .table-header {
+    @apply bg-[#1A1A1A] text-white text-sm font-medium;
+  }
+  
+  .table-row {
+    @apply border-b border-[#E5E5E5] transition-colors duration-150;
+  }
+  
+  .table-row:hover {
+    @apply bg-[#F8F8F8];
+  }
+  
+  .gold-accent {
+    @apply text-[#C9A962];
+  }
+  
+  .gold-border {
+    @apply border-[#C9A962];
+  }
+  
+  .gold-bg {
+    @apply bg-[#C9A962];
+  }
+  
+  .dark-bg {
+    @apply bg-[#1A1A1A];
+  }
+  
+  .number-display {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.4s ease-out;
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.5s ease-out;
+  }
+  
+  .animate-slide-in-left {
+    animation: slideInLeft 0.4s ease-out;
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  @keyframes slideInLeft {
+    from {
+      opacity: 0;
+      transform: translateX(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  
+  .stagger-1 { animation-delay: 50ms; }
+  .stagger-2 { animation-delay: 100ms; }
+  .stagger-3 { animation-delay: 150ms; }
+  .stagger-4 { animation-delay: 200ms; }
+  .stagger-5 { animation-delay: 250ms; }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F8F8F8;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D4D4D4;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #999999;
+}
+
+/* Focus styles for accessibility */
+*:focus-visible {
+  outline: 2px solid #C9A962;
+  outline-offset: 2px;
+}
+
+/* Hide number input spinners */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type=number] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
