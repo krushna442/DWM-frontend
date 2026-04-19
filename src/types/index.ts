@@ -45,6 +45,8 @@ export interface CauseActionRow {
   machineId?: string;
   supplierId?: string;
   departmentId?: string;
+  customerId?: string;
+  palletCategory?: string;
   internalExternal?: 'internal' | 'external';
   cause: string;
   action: string;
@@ -91,6 +93,7 @@ export interface PerManPerDay {
 // Overtime Entry
 export interface OvertimeEntry {
   departmentId: string;
+  machineId?: string;
   hours: number;
   reason: string;
 }
@@ -227,6 +230,10 @@ export interface DailyEntry {
   palletTrolleyIssues: IssueTracking;
   materialShortageIssue: IssueTracking;
   otherCriticalIssue: IssueTracking;
+  
+  // Extra text fields
+  otherField1: string;
+  otherField2: string;
 }
 
 // Email Notification

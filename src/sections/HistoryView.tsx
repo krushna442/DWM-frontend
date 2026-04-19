@@ -1,1371 +1,943 @@
-// import { useState, useMemo } from 'react';
-import { 
-    // Calendar as CalendarIcon, 
-    // Search, 
-    // Eye, 
-    // Trash2, 
-    // ChevronLeft,
-    // ChevronRight,
-    // Filter,
-  Download,
-  // AlertTriangle,
-  Calendar
-} from 'lucide-react';
-// import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useCallback, useEffect } from 'react';
+import { Download, Calendar, Search, FileText, RefreshCw, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-// import { Label } from '@/components/ui/label';
-import {
-  // Select,
-  // SelectContent,
-  // SelectItem,
-  // SelectTrigger,
-  // SelectValue,
-} from '@/components/ui/select';
-import {
-  // Dialog,
-  // DialogContent,
-  // DialogHeader,
-  // DialogTitle,
-} from '@/components/ui/dialog';
-// import { toast } from 'sonner';
-// import { useDailyEntry } from '@/context/DailyEntryContext';
-// import { useMasterData } from '@/context/MasterDataContext';
-// import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths } from 'date-fns';
+import { toast } from 'sonner';
+import * as api from '@/lib/api';
+import type { DailyEntry, CauseActionRow } from '@/types';
+import { useMasterData } from '@/context/MasterDataContext';
 
+// ─── Color tokens ──────────────────────────────────────────────────────────────
+const COLOR = {
+  ok:        '#D1FAE5',
+  warn:      '#FEF3C7',
+  bad:       '#FEE2E2',
+  na:        '#F9FAFB',
+  okText:    '#065F46',
+  warnText:  '#92400E',
+  badText:   '#991B1B',
+  naText:    '#374151',
+  cyan:      '#00BCD4',
+  purple:    '#907b99ff',
+  cummBg:    '#EFF6FF',
+  cummText:  '#1D4ED8',
+};
 
+// ─── MP badge colour map ──────────────────────────────────────────────────────
+function mpBadgeColor(mp: string) {
+  const map: Record<string, string> = {
+    S: '#EF4444',
+    Q: '#8B5CF6',
+    P: '#3B82F6',
+    C: '#F59E0B',
+    D: '#0EA5E9',
+    M: '#EC4899',
+  };
+  return map[mp] || '#94A3B8';
+}
 
-// ── Helper: Section header row ──────────────────────────────────────────────
-// function SectionHeader({ label, colSpan, color }: { label: string; colSpan: number; color: string }) {
-//   return (
-//     <tr>
-//       <td
-//         colSpan={colSpan}
-//         className="px-3 py-1 text-xs font-bold uppercase tracking-widest text-white border border-[#D4D4D4]"
-//         style={{ background: color, letterSpacing: "0.1em" }}
-//       >
-//         {label}
-//       </td>
-//     </tr>
-//   );
-// }
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+function yesNo(val: boolean) { return val ? 'YES' : 'NO'; }
+function pct(v: number) { return `${v}%`; }
 
-// ── Helper: Standard excel-style row ────────────────────────────────────────
-function ExcelRow({
-  sl, mp, checkpoint, owner, target, valueCell,
-  total, totalBg, causes, action, responsible, targetDate,
+function lines(rows: CauseActionRow[], field: keyof CauseActionRow): string {
+  return rows.map(r => (r[field] as string) || '').filter(Boolean).join('\n') || '—';
+}
+function flatLines(rows: CauseActionRow[], field: keyof CauseActionRow): string {
+  return rows.map(r => (r[field] as string) || '').filter(Boolean).join(' | ') || '—';
+}
+
+// ─── Sub-components ────────────────────────────────────────────────────────────
+function ValCell({
+  val, bg, textColor, colSpan = 1, sub,
 }: {
-  sl: number;
-  mp: string;
-  checkpoint: string;
-  owner: string;
-  target: React.ReactNode;
-  valueCell: React.ReactNode;
-  total: React.ReactNode;
-  totalBg: string;
-  causes?: string;
-  action?: string;
-  responsible?: string;
-  targetDate?: string;
+  val: React.ReactNode; bg?: string; textColor?: string; colSpan?: number; sub?: React.ReactNode;
 }) {
   return (
-    <tr style={{ background: sl % 2 === 0 ? "#FAFAFA" : "#FFFFFF" }}>
-      <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold text-[#666666]">{sl}</td>
-      <td className="border border-[#D4D4D4] px-2 py-1 font-medium text-[#1A1A1A]">{checkpoint}</td>
-      <td className="border border-[#D4D4D4] px-2 py-1 text-center text-[#666666]">{mp}</td>
-      <td className="border border-[#D4D4D4] px-2 py-1 text-center text-[#1A1A1A]">{owner}</td>
-      <td className="border border-[#D4D4D4] px-2 py-1 text-center text-[#666666]">{target}</td>
-      {valueCell}
-      <td className="border border-[#D4D4D4] px-2 py-1 text-center font-bold" style={{ background: totalBg }}>
-        {total}
+    <td className="border border-[#E2E8F0] px-2 py-1.5 text-center text-[11px] align-top"
+      colSpan={colSpan}
+      style={{ background: bg || COLOR.na, color: textColor || COLOR.naText }}>
+      <div className="font-semibold">{val}</div>
+      {sub && <div className="mt-0.5 text-[10px] opacity-70">{sub}</div>}
+    </td>
+  );
+}
+
+/** Standard Excel row */
+function ExcelRow({
+  sl, mp, checkpoint, target, valueCell,
+  causesRows, actionRows, responsibleRows, targetDateRows, isEven,
+}: {
+  sl: number; mp: string; checkpoint: string; target: React.ReactNode;
+  valueCell: React.ReactNode;
+  causesRows: string; actionRows: string; responsibleRows: string; targetDateRows: string;
+  isEven: boolean;
+}) {
+  const rowBg = isEven ? '#FAFAFA' : '#FFFFFF';
+  return (
+    <tr style={{ background: rowBg, verticalAlign: 'top' }}>
+      <td className="border border-[#E2E8F0] px-2 py-1.5 text-center text-[10px] text-[#94A3B8] font-semibold">{sl}</td>
+      <td className="border border-[#E2E8F0] px-2 py-1.5 text-[11px] font-medium text-[#1E293B]">{checkpoint}</td>
+      <td className="border border-[#E2E8F0] px-2 py-1.5 text-center">
+        <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded"
+          style={{ background: mpBadgeColor(mp), color: '#fff', letterSpacing: '0.05em' }}>
+          {mp}
+        </span>
       </td>
-      <td className="border border-[#D4D4D4] px-2 py-1 text-[#666666] text-xs">{causes ?? "—"}</td>
-      <td className="border border-[#D4D4D4] px-2 py-1 text-xs">{action ?? "—"}</td>
-      <td className="border border-[#D4D4D4] px-2 py-1 text-center text-xs text-[#666666]">{responsible ?? "—"}</td>
-      <td className="border border-[#D4D4D4] px-2 py-1 text-center text-xs text-[#666666]">{targetDate ?? "—"}</td>
+      <td className="border border-[#E2E8F0] px-2 py-1.5 text-center text-[11px] text-[#64748B]">{target}</td>
+      {valueCell}
+      <td className="border border-[#E2E8F0] px-2 py-1.5 text-[11px] leading-[1.6] align-top">
+        {causesRows.split('\n').map((line, i) => <div key={i} className="min-h-[1rem]">{line}</div>)}
+      </td>
+      <td className="border border-[#E2E8F0] px-2 py-1.5 text-[11px] leading-[1.6] align-top">
+        {actionRows.split('\n').map((line, i) => <div key={i} className="min-h-[1rem]">{line}</div>)}
+      </td>
+      <td className="border border-[#E2E8F0] px-2 py-1.5 text-center text-[11px] align-top text-[#475569]">
+        {responsibleRows.split('\n').map((line, i) => <div key={i} className="min-h-[1rem]">{line}</div>)}
+      </td>
+      <td className="border border-[#E2E8F0] px-2 py-1.5 text-center text-[11px] align-top text-[#475569]">
+        {targetDateRows.split('\n').map((line, i) => <div key={i} className="min-h-[1rem]">{line}</div>)}
+      </td>
     </tr>
   );
 }
 
+/** Cyan highlighted row (cumulative rows) */
+function CyanRow({ sl, mp, checkpoint, value, sub }: {
+  sl: number; mp: string; checkpoint: string; value: React.ReactNode; sub?: React.ReactNode;
+}) {
+  return (
+    <tr style={{ background: COLOR.cyan, verticalAlign: 'top' }}>
+      <td className="border border-[#00ACC1] px-2 py-1.5 text-center text-[10px] font-bold text-white">{sl}</td>
+      <td className="border border-[#00ACC1] px-2 py-1.5 text-[11px] font-bold text-white">{checkpoint}</td>
+      <td className="border border-[#00ACC1] px-2 py-1.5 text-center">
+        <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded"
+          style={{ background: 'rgba(0,0,0,0.25)', color: '#fff' }}>{mp}</span>
+      </td>
+      <td className="border border-[#00ACC1] px-2 py-1.5 text-center text-white/70 text-[11px]">—</td>
+      <td className="border border-[#00ACC1] px-2 py-1.5 text-center font-bold text-white text-[12px]"
+        style={{ background: 'rgba(0,0,0,0.15)' }}>
+        {value}
+        {sub && <div className="text-[9px] font-normal opacity-70 mt-0.5">{sub}</div>}
+      </td>
+      {['—', '—', '—', '—'].map((v, i) => (
+        <td key={i} className="border border-[#00ACC1] px-2 py-1.5 text-center text-white/60 text-[11px]">{v}</td>
+      ))}
+    </tr>
+  );
+}
 
+/** Purple highlighted row (YTD / cumulative override rows) */
+function PurpleRow({ sl, mp, checkpoint, value, target = '—' }: {
+  sl: number; mp: string; checkpoint: string; value: React.ReactNode; target?: string;
+}) {
+  return (
+    <tr style={{ background: COLOR.purple, verticalAlign: 'top' }}>
+      <td className="border border-[#6A1B9A] px-2 py-1.5 text-center text-[10px] font-bold text-white">{sl}</td>
+      <td className="border border-[#6A1B9A] px-2 py-1.5 text-[11px] font-bold text-white">{checkpoint}</td>
+      <td className="border border-[#6A1B9A] px-2 py-1.5 text-center">
+        <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded"
+          style={{ background: 'rgba(0,0,0,0.25)', color: '#fff' }}>{mp}</span>
+      </td>
+      <td className="border border-[#6A1B9A] px-2 py-1.5 text-center text-white/70 text-[11px]">{target}</td>
+      <td className="border border-[#6A1B9A] px-2 py-1.5 text-center font-bold text-white text-[12px]"
+        style={{ background: 'rgba(0,0,0,0.15)' }}>{value}</td>
+      {['—', '—', '—', '—'].map((v, i) => (
+        <td key={i} className="border border-[#6A1B9A] px-2 py-1.5 text-center text-white/60 text-[11px]">{v}</td>
+      ))}
+    </tr>
+  );
+}
 
-const data=  {
-        "id": "b7afb163-388e-11f1-88b5-5fcad6d29c94",
-        "report_date": "2025-04-16T00:00:00.000Z",
-        "month_key": "2025-04",
-        "submitted_by": "Ravi Kumar",
-        "submitted_at": "2026-04-15T05:48:24.000Z",
-        "updated_at": "2026-04-15T11:18:24.000Z",
-        "f01_accident": {
-            "target": 0,
-            "entries": [
-                {
-                    "type": "machine",
-                    "action": "Replaced wire",
-                    "machine_id": "mach-001",
-                    "responsible": "Maintenance",
-                    "target_date": "2025-04-16",
-                    "probable_cause": "Wire slip"
-                }
-            ],
-            "owner_name": "Arun",
-            "owner_email": "arun@plant.com"
-        },
-        "f02_customer_rejection": {
-            "action": "Inspection tightened",
-            "entries": [
-                {
-                    "customer_id": "cust-001",
-                    "quantity_ppm": 65,
-                    "customer_name": "TML",
-                    "reject_reason": "Crack"
-                }
-            ],
-            "owner_name": "Meena",
-            "target_ppm": 50,
-            "owner_email": "meena@plant.com",
-            "responsible": "QA",
-            "target_date": "2025-04-18"
-        },
-        "f03_production": {
-            "parts": [
-                {
-                    "actual": 115,
-                    "target": 120,
-                    "part_type": "Front"
-                },
-                {
-                    "actual": 98,
-                    "target": 100,
-                    "part_type": "Rear"
-                },
-                {
-                    "actual": 50,
-                    "target": 50,
-                    "part_type": "I/A"
-                }
-            ],
-            "action": "Increase manpower",
-            "owner_name": "Suresh",
-            "owner_email": "suresh@plant.com",
-            "responsible": "Production Head",
-            "target_date": "2025-04-17",
-            "total_actual": 263,
-            "total_target": 270
-        },
-        "f04_cycle_time": {
-            "action": "Maintenance",
-            "owner_name": "Vikram",
-            "owner_email": "vikram@plant.com",
-            "responsible": "Engineering",
-            "target_date": "2025-04-16",
-            "rear_minutes": 2.5,
-            "front_minutes": 2.2,
-            "probable_cause": "Vibration",
-            "target_minutes": 2,
-            "total_avg_minutes": 2.35
-        },
-        "f05_per_man_per_day": {
-            "action": "Increase staff",
-            "actual": 90,
-            "target": 100,
-            "owner_name": "Raj",
-            "owner_email": "raj@plant.com",
-            "responsible": "HR",
-            "target_date": "2025-04-20",
-            "probable_cause": "Low manpower"
-        },
-        "f06_ot_hours_last_day": {
-            "action": "Shift optimization",
-            "target": 5,
-            "entries": [
-                {
-                    "reason": "Demand",
-                    "ot_hours": 3,
-                    "department_id": "dept-001",
-                    "department_name": "WELDING"
-                }
-            ],
-            "owner_name": "Kiran",
-            "owner_email": "kiran@plant.com",
-            "responsible": "HR",
-            "target_date": "2025-04-20"
-        },
-        "f07_ot_hours_cumulative": {
-            "owner_name": "Kiran",
-            "owner_email": "kiran@plant.com",
-            "cumulative_hours": 45
-        },
-        "f08_dispatch": {
-            "action": "Backup truck",
-            "entries": [
-                {
-                    "parts": [
-                        {
-                            "qty": 100,
-                            "part_type": "front"
-                        },
-                        {
-                            "qty": 80,
-                            "part_type": "rear"
-                        },
-                        {
-                            "qty": 40,
-                            "part_type": "i_a"
-                        }
-                    ],
-                    "customer_id": "cust-001",
-                    "customer_name": "TML"
-                }
-            ],
-            "owner_name": "Anil",
-            "owner_email": "anil@plant.com",
-            "responsible": "Logistics",
-            "target_date": "2025-04-16",
-            "probable_cause": "Delay"
-        },
-        "f09_prod_plan_adherence": {
-            "action": "Fix downtime",
-            "reasons": [
-                "Machine issue"
-            ],
-            "actual_pct": 90,
-            "owner_name": "Ravi",
-            "target_pct": 95,
-            "owner_email": "ravi@plant.com",
-            "responsible": "Production",
-            "target_date": "2025-04-18"
-        },
-        "f10_otif_adherence": {
-            "action": "Improve logistics",
-            "reason": "Late dispatch",
-            "actual_pct": 92,
-            "owner_name": "Rohit",
-            "target_pct": 100,
-            "owner_email": "rohit@plant.com",
-            "responsible": "Supply Chain",
-            "target_date": "2025-04-18"
-        },
-        "f11_prod_hours_loss": {
-            "action": "Improve supply",
-            "reason": "Material shortage",
-            "target": 0,
-            "owner_name": "Ajay",
-            "owner_email": "ajay@plant.com",
-            "responsible": "Procurement",
-            "target_date": "2025-04-19",
-            "actual_hours": 5
-        },
-        "f12_line_quality_issue": {
-            "action": "Inspection",
-            "actual": 3,
-            "reason": "Welding defect",
-            "target": 0,
-            "owner_name": "QA",
-            "owner_email": "qa@plant.com",
-            "responsible": "QA",
-            "target_date": "2025-04-18"
-        },
-        "f13_poor_incoming_material": {
-            "action": "Reject batch",
-            "quantity": 20,
-            "owner_name": "Stores",
-            "owner_email": "stores@plant.com",
-            "responsible": "Stores",
-            "target_date": "2025-04-17",
-            "probable_causes": [
-                "Supplier issue"
-            ]
-        },
-        "f14_absenteeism": {
-            "action": "Backup staff",
-            "target": 2,
-            "owner_name": "HR",
-            "owner_email": "hr@plant.com",
-            "responsible": "HR",
-            "target_date": "2025-04-16",
-            "absent_count": 5,
-            "possible_causes": [
-                "Festival"
-            ]
-        },
-        "f15_machine_breakdown": {
-            "action": "Repair",
-            "entries": [
-                {
-                    "machine_id": "mach-002",
-                    "machine_name": "BALANCING",
-                    "probable_cause": "Bearing failure",
-                    "breakdown_time_minutes": 45
-                }
-            ],
-            "owner_name": "Deepak",
-            "owner_email": "deepak@plant.com",
-            "responsible": "Maintenance",
-            "target_date": "2025-04-16",
-            "target_minutes": 30
-        },
-        "f16_unit_consumption_last_day": {
-            "action": "Optimize usage",
-            "owner_name": "Energy",
-            "units_kvah": 500,
-            "owner_email": "energy@plant.com",
-            "responsible": "Utilities",
-            "target_date": "2025-04-17",
-            "possible_cause": "High load"
-        },
-        "f17_unit_consumption_ytd": {
-            "owner_name": "Energy",
-            "owner_email": "energy@plant.com",
-            "cumulative_kvah": 15000
-        },
-        "f18_diesel_last_day": {
-            "action": "Reduce runtime",
-            "target": 100,
-            "owner_name": "Ramesh",
-            "owner_email": "ramesh@plant.com",
-            "responsible": "Utilities",
-            "target_date": "2025-04-17",
-            "quantity_ltr": 120,
-            "probable_cause": "Generator usage"
-        },
-        "f19_diesel_ytd": {
-            "owner_name": "Ramesh",
-            "owner_email": "ramesh@plant.com",
-            "cumulative_ltr": 3000
-        },
-        "f20_power_factor": {
-            "action": "Install capacitor",
-            "actual_pct": 96,
-            "owner_name": "Electrical",
-            "target_pct": 99,
-            "owner_email": "elec@plant.com",
-            "responsible": "Electrical",
-            "target_date": "2025-04-18",
-            "probable_cause": "Load imbalance"
-        },
-        "f21_sales": {
-            "owner_name": "Sales",
-            "owner_email": "sales@plant.com",
-            "last_day_lakhs": 45,
-            "cumulative_lakhs": 560
-        },
-        "f22_training_last_day": {
-            "topic": "Safety",
-            "action": "Schedule again",
-            "owner_name": "Training",
-            "owner_email": "training@plant.com",
-            "responsible": "HR",
-            "target_date": "2025-04-18",
-            "probable_cause": "Time shortage",
-            "target_minutes": 30,
-            "training_minutes": 20
-        },
-        "f23_training_ytd": {
-            "owner_name": "Training",
-            "owner_email": "training@plant.com",
-            "cumulative_minutes": 1200
-        },
-        "f24_first_pass_ok": {
-            "action": "Improve QC",
-            "actual_pct": 96,
-            "owner_name": "QA",
-            "target_pct": 100,
-            "owner_email": "qa@plant.com",
-            "responsible": "QA",
-            "target_date": "2025-04-18",
-            "probable_cause": "Defects"
-        },
-        "f25_first_pass_pdi": {
-            "action": "Inspection",
-            "actual_pct": 97,
-            "owner_name": "QA",
-            "target_pct": 100,
-            "owner_email": "qa@plant.com",
-            "responsible": "QA",
-            "target_date": "2025-04-18",
-            "probable_cause": "Minor defects"
-        },
-        "f26_supplier_rejection": {
-            "action": "Audit supplier",
-            "entries": [
-                {
-                    "cause": "Quality issue",
-                    "supplier_id": "sup-001",
-                    "rejected_qty": 10,
-                    "supplier_name": "ABC Ltd"
-                }
-            ],
-            "owner_name": "Purchase",
-            "target_ppm": 50,
-            "owner_email": "purchase@plant.com",
-            "responsible": "Purchase",
-            "target_date": "2025-04-20",
-            "cumulative_ppm": 80
-        },
-        "f27_pdi_issue": {
-            "cause": "Inspection gap",
-            "action": "Train staff",
-            "owner_name": "QA",
-            "target_ppm": 0,
-            "issue_count": 3,
-            "owner_email": "qa@plant.com",
-            "responsible": "QA",
-            "target_date": "2025-04-18"
-        },
-        "f28_field_complaints": {
-            "action": "Fix design",
-            "quantity": 2,
-            "owner_name": "Service",
-            "owner_email": "service@plant.com",
-            "responsible": "R&D",
-            "target_date": "2025-04-25",
-            "descriptions": [
-                "Noise issue"
-            ]
-        },
-        "f29_sop_non_adherence": {
-            "found": true,
-            "action": "Train staff",
-            "owner_name": "Audit",
-            "owner_email": "audit@plant.com",
-            "responsible": "Audit",
-            "target_date": "2025-04-19",
-            "descriptions": [
-                "Procedure skipped"
-            ]
-        },
-        "f30_fixture_issue": {
-            "action": "Adjusted",
-            "has_issue": true,
-            "owner_name": "Operator",
-            "description": "Fixture misalignment",
-            "owner_email": "operator@plant.com",
-            "responsible": "Maintenance",
-            "target_date": "2025-04-16",
-            "worker_name": "Raju"
-        },
-        "f31_pallet_trolley_issue": {
-            "action": "Replaced",
-            "has_issue": true,
-            "owner_name": "Operator",
-            "description": "Broken wheel",
-            "owner_email": "operator@plant.com",
-            "responsible": "Maintenance",
-            "target_date": "2025-04-16",
-            "worker_name": "Mohan"
-        },
-        "f32_material_shortage": {
-            "action": "Order placed",
-            "has_issue": true,
-            "owner_name": "Stores",
-            "owner_email": "stores@plant.com",
-            "responsible": "Purchase",
-            "target_date": "2025-04-18",
-            "descriptions": [
-                "Steel shortage"
-            ]
-        },
-        "f33_other_critical_issue": {
-            "action": "Backup generator",
-            "has_issue": true,
-            "owner_name": "Admin",
-            "owner_email": "admin@plant.com",
-            "responsible": "Admin",
-            "target_date": "2025-04-16",
-            "descriptions": [
-                "Power outage"
-            ]
-        }
-    }
+// ─── Excel Export ─────────────────────────────────────────────────────────────
+async function exportToExcel(d: DailyEntry, partTypes: { id: string; name: string }[]) {
+  // @ts-ignore
+  const XLSX = await import('https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs');
+
+  const rows: (string | number)[][] = [
+    ['SI', 'Check Points', 'MP', 'Target', 'Actual / Value', 'Probable Causes', 'Action Planned', 'Responsible', 'Target Date'],
+  ];
+
+  function addRow(sl: number, cp: string, mp: string, tgt: string | number, val: string | number,
+    cause: string, action: string, resp: string, td: string) {
+    rows.push([sl, cp, mp, String(tgt), String(val), cause, action, resp, td]);
+  }
+
+  const prod = d.production || [];
+  const grouped = partTypes.map(pt => {
+    const item = prod.find(p => p.partTypeId === pt.id);
+    return { name: pt.name, target: item?.target || 0, actual: item?.actual || 0 };
+  });
+  const totalT = grouped.reduce((s, g) => s + g.target, 0);
+  const totalA = grouped.reduce((s, g) => s + g.actual, 0);
+  const ot = d.overtime || [];
+  const otTotal = ot.reduce((s, e) => s + e.hours, 0);
+  const ct = d.cycleTime;
+  const pm = d.perManPerDay;
+  const cot = d.cumulativeOT;
+  const u = d.utilities;
+  const s2 = d.sales;
+  const t = d.training;
+  const q = d.qualityRatios;
+  const cr = d.customerRejections || [];
+  const sr = d.supplierRejections || [];
+  const safetyCA = (d.safety || []).flatMap(e => e.causeActions || []);
+
+  addRow(1, 'Last day accident/Incident/Near Miss in nos. (Reported)', 'S', '0',
+    (d.safety || []).length > 0 ? (d.safety || []).map(e => `${e.type} (${e.count})`).join(', ') : '0',
+    flatLines(safetyCA, 'cause'), flatLines(safetyCA, 'action'), flatLines(safetyCA, 'responsible'), flatLines(safetyCA, 'targetDate'));
+  addRow(2, 'Last day Customer rejection (TML | ALW | PNR)', 'Q', '0 PPM',
+    d.customerRejectionCount > 0 ? cr.map(r => r.reason).join(', ') : '0',
+    cr.map(r => r.reason).join(' | ') || '—', '—', '—', '—');
+  addRow(3, 'Last Day Production', 'P', totalT,
+    `${totalA}/${totalT} | ${grouped.map(g => `${g.name}: ${g.actual}/${g.target}`).join(', ')}`,
+    '—', '—', '—', '—');
+  addRow(4, 'Cycle Time (Front / Rear)', 'P', '<2 Min', `F:${ct.front}m | R:${ct.rear}m`,
+    flatLines(ct.causeActions || [], 'cause'), flatLines(ct.causeActions || [], 'action'),
+    flatLines(ct.causeActions || [], 'responsible'), flatLines(ct.causeActions || [], 'targetDate'));
+  addRow(5, 'Per man per day prop shaft qty Yesterday', 'P', pm.target, pm.actual,
+    flatLines(pm.causeActions || [], 'cause'), flatLines(pm.causeActions || [], 'action'),
+    flatLines(pm.causeActions || [], 'responsible'), flatLines(pm.causeActions || [], 'targetDate'));
+  addRow(6, 'Last day OT hours (Prd,QA,Main,Mater,Engg,Planning)', 'C', '0',
+    otTotal > 0 ? `${otTotal} hrs` : '0',
+    ot.map(e => e.reason).filter(Boolean).join(' | ') || '—', '—', '—', '—');
+  addRow(7, 'Cumulative OT hours', 'C', '—', `${cot.todayCumulative} hrs`, '—', '—', '—', '—');
+  addRow(8, 'Last Day Dispatch (TML | ALW | PNR)', 'S', '—',
+    (d.dispatch || []).map(e => `${e.customerId}: ${e.quantity}`).join(' | ') || '—', '—', '—', '—', '—');
+  addRow(9, 'Production plan adherance %age (Yesterday)', 'P', pct(d.productionPlanAdherence.target), pct(d.productionPlanAdherence.actual),
+    flatLines(d.productionPlanAdherence.causeActions || [], 'cause'), flatLines(d.productionPlanAdherence.causeActions || [], 'action'),
+    flatLines(d.productionPlanAdherence.causeActions || [], 'responsible'), flatLines(d.productionPlanAdherence.causeActions || [], 'targetDate'));
+  addRow(10, 'Ontime In Full schedule adherance %age (Yesterday)', 'D', pct(d.scheduleAdherence.target), pct(d.scheduleAdherence.actual),
+    flatLines(d.scheduleAdherence.causeActions || [], 'cause'), flatLines(d.scheduleAdherence.causeActions || [], 'action'),
+    flatLines(d.scheduleAdherence.causeActions || [], 'responsible'), flatLines(d.scheduleAdherence.causeActions || [], 'targetDate'));
+  addRow(11, 'Production hours loss for material shortage', 'P', '0',
+    d.materialShortageLoss.actual > 0 ? `${d.materialShortageLoss.actual} hrs` : '0',
+    flatLines(d.materialShortageLoss.causeActions || [], 'cause'), flatLines(d.materialShortageLoss.causeActions || [], 'action'),
+    flatLines(d.materialShortageLoss.causeActions || [], 'responsible'), flatLines(d.materialShortageLoss.causeActions || [], 'targetDate'));
+  addRow(12, 'Line Quality Issue', 'P', '0', d.lineQualityIssues.actual,
+    flatLines(d.lineQualityIssues.causeActions || [], 'cause'), flatLines(d.lineQualityIssues.causeActions || [], 'action'),
+    flatLines(d.lineQualityIssues.causeActions || [], 'responsible'), flatLines(d.lineQualityIssues.causeActions || [], 'targetDate'));
+  addRow(13, 'Production line affected due to poor Quality of incoming material', 'Q', '0', d.incomingMaterialQualityImpact.actual,
+    flatLines(d.incomingMaterialQualityImpact.causeActions || [], 'cause'), flatLines(d.incomingMaterialQualityImpact.causeActions || [], 'action'),
+    flatLines(d.incomingMaterialQualityImpact.causeActions || [], 'responsible'), flatLines(d.incomingMaterialQualityImpact.causeActions || [], 'targetDate'));
+  addRow(14, 'Unauthorised absentisim (Prd & Others)', 'M', '0', d.absenteeism.actual,
+    flatLines(d.absenteeism.causeActions || [], 'cause'), flatLines(d.absenteeism.causeActions || [], 'action'),
+    flatLines(d.absenteeism.causeActions || [], 'responsible'), flatLines(d.absenteeism.causeActions || [], 'targetDate'));
+  addRow(15, 'Breakdown of machine', 'P', '30 min max',
+    d.machineBreakdown.actual > 0 ? `${d.machineBreakdown.actual} min` : '0',
+    flatLines(d.machineBreakdown.causeActions || [], 'cause'), flatLines(d.machineBreakdown.causeActions || [], 'action'),
+    flatLines(d.machineBreakdown.causeActions || [], 'responsible'), flatLines(d.machineBreakdown.causeActions || [], 'targetDate'));
+  addRow(16, 'Unit consumption Last Day (KVAH)', 'C', '—', `${u.electricityKVAH} kVAh (Shift ${u.electricityShift})`, '—', '—', '—', '—');
+  addRow(17, 'Unit Consumption Till date (YTD)', 'C', '—', `${u.cumulativeElectricity} kVAh`, '—', '—', '—', '—');
+  addRow(18, 'Diesel consumption Last Day (LTR)', 'C', '0', `${u.dieselLTR} L (Shift ${u.dieselShift})`, '—', '—', '—', '—');
+  addRow(19, 'Diesel consumption Till date (LTR)', 'C', '0', `${u.cumulativeDiesel} L`, '—', '—', '—', '—');
+  addRow(20, 'Power Factor', 'C', '95–99', `${u.powerFactor}%`, '—', '—', '—', '—');
+  addRow(21, 'Sales Values (Last Day & Cumm)', 'C', '—', `Daily: ₹${s2.dailySales}L | Cumm: ₹${s2.cumulativeSales}L`, '—', '—', '—', '—');
+  addRow(22, 'Last day training hours', 'M', '30 min', `${t.dailyHours} hrs — ${t.topic || '—'}`, '—', '—', '—', '—');
+  addRow(23, 'Cumulative training hours', 'M', '—', `${t.cumulativeHours} hrs`, '—', '—', '—', '—');
+  addRow(24, 'Last day 1st pass ok Ratio', 'Q', '100%', pct(q.firstPassOKRatio),
+    flatLines(q.firstPassCauseActions || [], 'cause'), flatLines(q.firstPassCauseActions || [], 'action'),
+    flatLines(q.firstPassCauseActions || [], 'responsible'), flatLines(q.firstPassCauseActions || [], 'targetDate'));
+  addRow(25, 'Last Day 1st Pass ok Ratio-PDI', 'Q', '100%', pct(q.pdiRatio),
+    flatLines(q.pdiCauseActions || [], 'cause'), flatLines(q.pdiCauseActions || [], 'action'),
+    flatLines(q.pdiCauseActions || [], 'responsible'), flatLines(q.pdiCauseActions || [], 'targetDate'));
+  addRow(26, 'Last day supplier rejection', 'Q', '0 PPM',
+    d.supplierRejectionCount > 0 ? sr.map(r => r.reason || r.supplierId).join(', ') : '0',
+    sr.map(r => r.reason).join(' | ') || '—', '—', '—', '—');
+  addRow(27, 'Last Day PDI Issue', 'Q', '0', yesNo(d.pdiIssues.hasIssue),
+    flatLines(d.pdiIssues.causeActions || [], 'cause'), flatLines(d.pdiIssues.causeActions || [], 'action'),
+    flatLines(d.pdiIssues.causeActions || [], 'responsible'), flatLines(d.pdiIssues.causeActions || [], 'targetDate'));
+  addRow(28, 'Last day field complaints/Issue reported in numbers', 'Q', '0 Nos', yesNo(d.fieldComplaints.hasIssue),
+    flatLines(d.fieldComplaints.causeActions || [], 'cause'), flatLines(d.fieldComplaints.causeActions || [], 'action'),
+    flatLines(d.fieldComplaints.causeActions || [], 'responsible'), flatLines(d.fieldComplaints.causeActions || [], 'targetDate'));
+  addRow(29, 'Is there any SOP non adherance found in yesterdays LPA audit', 'Q', '—', yesNo(d.sopNonAdherence.hasIssue),
+    flatLines(d.sopNonAdherence.causeActions || [], 'cause'), flatLines(d.sopNonAdherence.causeActions || [], 'action'),
+    flatLines(d.sopNonAdherence.causeActions || [], 'responsible'), flatLines(d.sopNonAdherence.causeActions || [], 'targetDate'));
+  addRow(30, 'Line Issue/Stop Due to fixtures', 'D', '0', yesNo(d.fixtureIssues.hasIssue),
+    flatLines(d.fixtureIssues.causeActions || [], 'cause'), flatLines(d.fixtureIssues.causeActions || [], 'action'),
+    flatLines(d.fixtureIssues.causeActions || [], 'responsible'), flatLines(d.fixtureIssues.causeActions || [], 'targetDate'));
+  addRow(31, 'Any Issue Related to Pallets Or Trolley (Internal & External)', 'P', '0', yesNo(d.palletTrolleyIssues.hasIssue),
+    flatLines(d.palletTrolleyIssues.causeActions || [], 'cause'), flatLines(d.palletTrolleyIssues.causeActions || [], 'action'),
+    flatLines(d.palletTrolleyIssues.causeActions || [], 'responsible'), flatLines(d.palletTrolleyIssues.causeActions || [], 'targetDate'));
+
+  let sl = 32;
+  if (d.materialShortageIssue) {
+    const ms = d.materialShortageIssue;
+    addRow(sl++, 'Material Shortage Issue', 'P', '0',
+      (ms.quantity || 0) > 0 ? `${ms.quantity} nos` : '0',
+      flatLines(ms.causeActions || [], 'cause'), flatLines(ms.causeActions || [], 'action'),
+      flatLines(ms.causeActions || [], 'responsible'), flatLines(ms.causeActions || [], 'targetDate'));
+  }
+  if (d.otherCriticalIssue) {
+    addRow(sl++, 'Other Critical Issue', 'P', '0', yesNo(d.otherCriticalIssue.hasIssue),
+      flatLines(d.otherCriticalIssue.causeActions || [], 'cause'), flatLines(d.otherCriticalIssue.causeActions || [], 'action'),
+      flatLines(d.otherCriticalIssue.causeActions || [], 'responsible'), flatLines(d.otherCriticalIssue.causeActions || [], 'targetDate'));
+  }
+  if (d.otherField1) addRow(sl++, 'Others / Remarks', '—', '—', d.otherField1, '—', '—', '—', '—');
+  if (d.otherField2) addRow(sl++, 'Others / Remarks 2', '—', '—', d.otherField2, '—', '—', '—', '—');
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 4 }, { wch: 46 }, { wch: 5 }, { wch: 12 },
+    { wch: 30 }, { wch: 28 }, { wch: 28 }, { wch: 14 }, { wch: 14 },
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Daily Report');
+  XLSX.writeFile(wb, `Daily_Report_${d.date}.xlsx`);
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function HistoryView() {
-  // const { entries, deleteEntry } = useDailyEntry();
-  // const { departments, partTypes } = useMasterData();
-  
-  // const [currentMonth, setCurrentMonth] = useState(new Date());
-  // const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  // const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
-  // const [searchQuery, setSearchQuery] = useState('');
-  // const [selectedDepartment, setSelectedDepartment] = useState('all');
-  // const [selectedEntry, setSelectedEntry] = useState<any>(null);
-  // const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState('');
+  const [report, setReport] = useState<DailyEntry | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const { partTypes } = useMasterData();
 
-  // const monthStart = startOfMonth(currentMonth);
-  // const monthEnd = endOfMonth(currentMonth);
-  // const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  useEffect(() => {
+    (async () => {
+      try {
+        const latest = await api.getLatestReport();
+        if (latest) { setReport(latest); setSelectedDate(latest.date); }
+        else setNotFound(true);
+      } catch { setNotFound(true); }
+      finally { setLoading(false); }
+    })();
+  }, []);
 
-  // const filteredEntries = useMemo(() => {
-  //   return entries.filter(entry => {
-  //     const matchesSearch = entry.date.includes(searchQuery) ||
-  //       departments.find(d => d.id === entry.departmentId)?.name.toLowerCase().includes(searchQuery.toLowerCase());
-  //     const matchesDept = selectedDepartment === 'all' || entry.departmentId === selectedDepartment;
-  //     return matchesSearch && matchesDept;
-  //   }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  // }, [entries, searchQuery, selectedDepartment, departments]);
+  const fetchReport = useCallback(async (date: string) => {
+    if (!date) return;
+    setLoading(true); setNotFound(false); setReport(null);
+    try {
+      const data = await api.getReport(date);
+      setReport(data);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.toLowerCase().includes('not found') || msg.includes('404')) {
+        setNotFound(true); toast.error(`No report found for ${date}`);
+      } else { toast.error(`Failed to load report: ${msg}`); }
+    } finally { setLoading(false); }
+  }, []);
 
-  // const getEntriesForDate = (date: Date) => {
-  //   return entries.filter(entry => {
-  //     const entryDate = new Date(entry.date);
-  //     return isSameDay(entryDate, date);
-  //   });
-  // };
+  const handleExport = async () => {
+    if (!report) return;
+    setExporting(true);
+    try { await exportToExcel(report, partTypes); toast.success('Excel exported!'); }
+    catch { toast.error('Export failed. Please try again.'); }
+    finally { setExporting(false); }
+  };
 
-  // const getEntryStatus = (entry: any) => {
-  //   const hasIssues = entry.safety.length > 0 ||
-  //     entry.customerRejections.length > 0 ||
-  //     entry.lineQualityIssues.actual > 0 ||
-  //     entry.machineBreakdown.actual > 0;
-  //   return hasIssues ? 'issues' : 'good';
-  // };
-
-  // const handlePreviousMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
-  // const handleNextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
-
-  // const handleViewEntry = (entry: any) => {
-  //   setSelectedEntry(entry);
-  //   setIsViewDialogOpen(true);
-  // };
-
-  // const handleDeleteEntry = (id: string) => {
-  //   if (confirm('Are you sure you want to delete this entry?')) {
-  //     deleteEntry(id);
-  //     toast.success('Entry deleted successfully');
-  //   }
-  // };
-
+  const d = report;
+  let _sl = 0;
+  const ns = () => ++_sl; // next serial
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header */}
+    <div className="space-y-4 animate-fade-in">
+
+      {/* ─── Header ─────────────────────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold text-[#1A1A1A]">Entry History</h2>
-          <p className="text-[#666666] mt-1">View and manage past daily entries</p>
+          <h2 className="text-xl font-semibold text-[#1A1A1A] flex items-center gap-2">
+            <FileText className="w-5 h-5 text-[#C9A962]" />
+            Daily Report History
+          </h2>
+          <p className="text-[#666666] text-sm mt-0.5">View saved daily reports by date</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div>
-            <Input type="date" className="input-field" />
-            <Calendar className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#999999]" />
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex items-center">
+            <Calendar className="w-4 h-4 text-[#999] absolute left-2.5 pointer-events-none" />
+            <Input type="date" value={selectedDate}
+              onChange={e => setSelectedDate(e.target.value)}
+              className="pl-9 h-9 text-sm w-44 border-[#E5E5E5]" />
           </div>
-     
-          <Button variant="outline" className="border-[#C9A962] text-[#C9A962]">
-            <Download className="w-4 h-4 mr-2" />
-            Export
+          <Button
+            onClick={() => { if (!selectedDate) { toast.error('Please select a date'); return; } fetchReport(selectedDate); }}
+            disabled={loading || !selectedDate} size="sm"
+            className="h-9 px-4 text-sm font-semibold"
+            style={{ background: '#C9A962', color: '#1A1A1A' }}>
+            {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+            <span className="ml-1.5">{loading ? 'Loading...' : 'View Report'}</span>
           </Button>
+          {d && (
+            <Button variant="outline" size="sm"
+              className="h-9 border-[#C9A962] text-[#C9A962] font-semibold"
+              onClick={handleExport} disabled={exporting}>
+              {exporting
+                ? <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                : <Download className="w-3.5 h-3.5 mr-1.5" />}
+              {exporting ? 'Exporting...' : 'Export Excel'}
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Filters */}
-      {/* <Card className="card">
-        <CardContent className="p-4">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="flex-1 min-w-64">
-              <Label className="form-label">Search</Label>
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#999999]" />
-                <Input
-                  placeholder="Search by date or department..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="input-field pl-10"
-                />
+      {/* ─── Empty / Not Found ───────────────────────────────────────────── */}
+      {!d && !loading && (
+        <div className="flex flex-col items-center justify-center py-20 text-center bg-white rounded-xl border border-[#E5E5E5]">
+          <Calendar className="w-12 h-12 text-[#D4D4D4] mb-4" />
+          {notFound
+            ? <><p className="text-[#1A1A1A] font-semibold text-lg">No report found</p>
+                <p className="text-[#666] text-sm mt-1">No report exists for {selectedDate}. Try another date.</p></>
+            : <><p className="text-[#1A1A1A] font-semibold text-lg">Select a date</p>
+                <p className="text-[#666] text-sm mt-1">Pick a date above and click View Report</p></>}
+        </div>
+      )}
+
+      {loading && (
+        <div className="flex items-center justify-center py-24">
+          <RefreshCw className="w-8 h-8 text-[#C9A962] animate-spin" />
+        </div>
+      )}
+
+      {/* ─── Report Table ────────────────────────────────────────────────── */}
+      {d && (() => {
+        _sl = 0;
+        const prod = d.production || [];
+        const grouped = partTypes.map(pt => {
+          const item = prod.find(p => p.partTypeId === pt.id);
+          return { name: pt.name, target: item?.target || 0, actual: item?.actual || 0 };
+        });
+        const totalT = grouped.reduce((s, g) => s + g.target, 0);
+        const totalA = grouped.reduce((s, g) => s + g.actual, 0);
+        const ot = d.overtime || [];
+        const otTotal = ot.reduce((s, e) => s + e.hours, 0);
+        const ct = d.cycleTime;
+        const pm = d.perManPerDay;
+        const cot = d.cumulativeOT;
+        const disp = d.dispatch || [];
+        const u = d.utilities;
+        const s2 = d.sales;
+        const t = d.training;
+        const q = d.qualityRatios;
+        const cr = d.customerRejections || [];
+        const sr = d.supplierRejections || [];
+
+        return (
+          <div className="bg-white rounded-xl border border-[#E2E8F0] overflow-hidden shadow-sm">
+            {/* Title bar */}
+            <div className="px-4 py-3 border-b border-[#E2E8F0] bg-[#1A1A2E] flex items-center justify-between">
+              <div className="text-sm font-bold text-white uppercase tracking-wide">
+                Daily Report —{' '}
+                {new Date(d.date + 'T00:00:00').toLocaleDateString('en-IN', {
+                  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+                })}
               </div>
+              <span className="text-xs text-white/50 font-medium flex items-center gap-1">
+                <ChevronRight className="w-3 h-3" /> Submitted by: {d.createdBy || 'Admin'}
+              </span>
             </div>
-            <div className="w-48">
-              <Label className="form-label">Department</Label>
-              <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
-                <SelectTrigger className="input-field">
-                  <SelectValue placeholder="All Departments" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  {departments.filter(d => d.isActive).map(dept => (
-                    <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+
+            {/* MP Legend */}
+            <div className="flex items-center gap-3 px-4 py-2 border-b border-[#E2E8F0] bg-[#F8FAFC] text-[10px] flex-wrap">
+              <span className="font-semibold text-[#64748B] uppercase tracking-wide">MP:</span>
+              {([['S','#EF4444','Safety'],['Q','#8B5CF6','Quality'],['P','#3B82F6','Production'],
+                ['C','#F59E0B','Common'],['D','#0EA5E9','Delivery'],['M','#EC4899','Manpower']] as [string,string,string][]).map(([k,c,l]) => (
+                <span key={k} className="flex items-center gap-1">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded text-white text-[9px] font-bold"
+                    style={{ background: c }}>{k}</span>
+                  <span className="text-[#64748B]">{l}</span>
+                </span>
+              ))}
+              <span className="ml-auto flex items-center gap-3">
+                {([[COLOR.ok,COLOR.okText,'On Target'],[COLOR.warn,COLOR.warnText,'Needs Attention'],[COLOR.bad,COLOR.badText,'Critical']] as [string,string,string][]).map(([bg,tc,lbl]) => (
+                  <span key={lbl} className="flex items-center gap-1">
+                    <span className="inline-block w-3 h-3 rounded-sm border border-black/10" style={{ background: bg }} />
+                    <span style={{ color: tc }} className="font-medium">{lbl}</span>
+                  </span>
+                ))}
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse" style={{ fontFamily: "'Segoe UI', Calibri, Arial, sans-serif" }}>
+                <thead>
+                  <tr style={{ background: '#1E293B', color: '#fff' }}>
+                    <th className="border border-[#334155] px-2 py-2 text-center w-8 text-[10px]">SI</th>
+                    <th className="border border-[#334155] px-2 py-2 text-left min-w-[240px] text-[11px]">Check Points</th>
+                    <th className="border border-[#334155] px-2 py-2 text-center w-10 text-[10px]">MP</th>
+                    <th className="border border-[#334155] px-2 py-2 text-center min-w-[70px] text-[10px]">Target</th>
+                    <th className="border border-[#334155] px-2 py-2 text-center min-w-[130px] text-[10px]">Actual / Value</th>
+                    <th className="border border-[#334155] px-2 py-2 text-left min-w-[160px] text-[10px]"
+                      style={{ background: '#134E4A', color: '#6EE7B7' }}>Probable Causes</th>
+                    <th className="border border-[#334155] px-2 py-2 text-left min-w-[160px] text-[10px]"
+                      style={{ background: '#134E4A', color: '#6EE7B7' }}>Action Planned</th>
+                    <th className="border border-[#334155] px-2 py-2 text-center w-24 text-[10px]"
+                      style={{ background: '#134E4A', color: '#6EE7B7' }}>Responsible</th>
+                    <th className="border border-[#334155] px-2 py-2 text-center w-24 text-[10px]"
+                      style={{ background: '#134E4A', color: '#6EE7B7' }}>Target Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+
+                  {/* ── 1. Safety ── */}
+                  {(() => {
+                    const entries = d.safety || [];
+                    const hasSafety = entries.length > 0;
+                    const ca = entries.flatMap(e => e.causeActions || []);
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="S" isEven={n % 2 === 0}
+                        checkpoint="Last day accident/Incident/Near Miss in nos. (Reported)" target="0"
+                        valueCell={<ValCell val={hasSafety ? entries.map(e => `${e.type} (${e.count})`).join(', ') : '0'}
+                          bg={hasSafety ? COLOR.warn : COLOR.ok} textColor={hasSafety ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(ca,'cause')} actionRows={lines(ca,'action')}
+                        responsibleRows={lines(ca,'responsible')} targetDateRows={lines(ca,'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 2. Customer Rejection ── */}
+                  {(() => {
+                    const count = d.customerRejectionCount || 0;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="Q" isEven={n % 2 === 0}
+                        checkpoint="Last day Customer rejection (TML | ALW | PNR)" target="0 PPM"
+                        valueCell={<ValCell val={count > 0 ? `${count} rejection${count>1?'s':''}` : '0'}
+                          bg={count > 0 ? COLOR.bad : COLOR.ok} textColor={count > 0 ? COLOR.badText : COLOR.okText}
+                          sub={count > 0 ? cr.map(r=>r.reason).join(' · ') : undefined} />}
+                        causesRows={cr.map(r=>r.reason).filter(Boolean).join('\n')||'—'}
+                        actionRows="—" responsibleRows="—" targetDateRows="—" />
+                    );
+                  })()}
+
+                  {/* ── 3. Production ── */}
+                  {(() => {
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="P" isEven={n % 2 === 0}
+                        checkpoint="Last Day Production" target={totalT}
+                        valueCell={<ValCell val={`${totalA} / ${totalT}`}
+                          bg={totalA >= totalT ? COLOR.ok : COLOR.warn}
+                          textColor={totalA >= totalT ? COLOR.okText : COLOR.warnText}
+                          sub={<span className="flex flex-wrap justify-center gap-2">
+                            {grouped.map((g,i) => (
+                              <span key={i} style={{color: g.actual>=g.target?COLOR.okText:COLOR.badText}}>
+                                {g.name}: {g.actual}/{g.target}
+                              </span>))}
+                          </span>} />}
+                        causesRows="—" actionRows="—" responsibleRows="—" targetDateRows="—" />
+                    );
+                  })()}
+
+                  {/* ── 4. Cycle Time ── */}
+                  {(() => {
+                    const sum = ct.front + ct.rear;
+                    const isHigh = sum > 2;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="P" isEven={n % 2 === 0}
+                        checkpoint="Cycle Time (Front / Rear)" target="<2 Min"
+                        valueCell={<ValCell val={`F: ${ct.front}m | R: ${ct.rear}m`}
+                          bg={isHigh ? COLOR.warn : COLOR.ok} textColor={isHigh ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(ct.causeActions||[],'cause')} actionRows={lines(ct.causeActions||[],'action')}
+                        responsibleRows={lines(ct.causeActions||[],'responsible')} targetDateRows={lines(ct.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 5. Per Man Per Day ── */}
+                  {(() => {
+                    const isLow = pm.actual > 0 && pm.actual < pm.target;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="P" isEven={n % 2 === 0}
+                        checkpoint="Per man per day prop shaft qty Yesterday" target={pm.target}
+                        valueCell={<ValCell val={pm.actual}
+                          bg={isLow ? COLOR.warn : COLOR.ok} textColor={isLow ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(pm.causeActions||[],'cause')} actionRows={lines(pm.causeActions||[],'action')}
+                        responsibleRows={lines(pm.causeActions||[],'responsible')} targetDateRows={lines(pm.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 6. OT Hours (daily) ── */}
+                  {(() => {
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="C" isEven={n % 2 === 0}
+                        checkpoint="Last day OT hours (Prd,QA,Main,Mater,Engg,Planning)" target="0"
+                        valueCell={<ValCell val={otTotal > 0 ? `${otTotal} hrs` : '0'}
+                          bg={otTotal > 0 ? COLOR.warn : COLOR.ok} textColor={otTotal > 0 ? COLOR.warnText : COLOR.okText}
+                          sub={otTotal > 0 ? ot.map(e=>`Dept ${e.departmentId||'?'}: ${e.hours}h`).join(' · ') : undefined} />}
+                        causesRows={ot.map(e=>e.reason).filter(Boolean).join('\n')||'—'}
+                        actionRows="—" responsibleRows="—" targetDateRows="—" />
+                    );
+                  })()}
+
+                  {/* ── 7. Cumulative OT (CYAN) ── */}
+                  {(() => {
+                    const n = ns();
+                    return (
+                      <CyanRow key={n} sl={n} mp="C" checkpoint="Cumulative OT hours"
+                        value={`${cot.todayCumulative} hrs`}
+                        sub={`prev: ${cot.previousTotal} | today added: ${cot.yesterdayOT}`} />
+                    );
+                  })()}
+
+                  {/* ── 8. Dispatch ── */}
+                  {(() => {
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="S" isEven={n % 2 === 0}
+                        checkpoint="Last Day Dispatch (TML | ALW | PNR)" target="—"
+                        valueCell={<ValCell val={disp.map(e=>`${e.customerId}: ${e.quantity}`).join(' | ')||'—'} bg={COLOR.na} />}
+                        causesRows="—" actionRows="—" responsibleRows="—" targetDateRows="—" />
+                    );
+                  })()}
+
+                  {/* ── 9. Production Plan Adherence ── */}
+                  {(() => {
+                    const m = d.productionPlanAdherence;
+                    const missed = m.actual > 0 && m.actual < m.target;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="P" isEven={n % 2 === 0}
+                        checkpoint="Production plan adherance %age (Yesterday)" target={pct(m.target)}
+                        valueCell={<ValCell val={pct(m.actual)}
+                          bg={missed ? COLOR.warn : COLOR.ok} textColor={missed ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(m.causeActions||[],'cause')} actionRows={lines(m.causeActions||[],'action')}
+                        responsibleRows={lines(m.causeActions||[],'responsible')} targetDateRows={lines(m.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 10. OTIF Schedule Adherence ── */}
+                  {(() => {
+                    const m = d.scheduleAdherence;
+                    const missed = m.actual > 0 && m.actual < m.target;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="D" isEven={n % 2 === 0}
+                        checkpoint="Ontime In Full schedule adherance %age (Yesterday)" target={pct(m.target)}
+                        valueCell={<ValCell val={pct(m.actual)}
+                          bg={missed ? COLOR.warn : COLOR.ok} textColor={missed ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(m.causeActions||[],'cause')} actionRows={lines(m.causeActions||[],'action')}
+                        responsibleRows={lines(m.causeActions||[],'responsible')} targetDateRows={lines(m.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 11. Material Shortage Loss ── */}
+                  {(() => {
+                    const m = d.materialShortageLoss;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="P" isEven={n % 2 === 0}
+                        checkpoint="Production hours loss for material shortage" target="0"
+                        valueCell={<ValCell val={m.actual > 0 ? `${m.actual} hrs` : '0'}
+                          bg={m.actual > 0 ? COLOR.warn : COLOR.ok} textColor={m.actual > 0 ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(m.causeActions||[],'cause')} actionRows={lines(m.causeActions||[],'action')}
+                        responsibleRows={lines(m.causeActions||[],'responsible')} targetDateRows={lines(m.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 12. Line Quality Issue ── */}
+                  {(() => {
+                    const m = d.lineQualityIssues;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="P" isEven={n % 2 === 0}
+                        checkpoint="Line Quality Issue" target="0"
+                        valueCell={<ValCell val={m.actual}
+                          bg={m.actual > 0 ? COLOR.warn : COLOR.ok} textColor={m.actual > 0 ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(m.causeActions||[],'cause')} actionRows={lines(m.causeActions||[],'action')}
+                        responsibleRows={lines(m.causeActions||[],'responsible')} targetDateRows={lines(m.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 13. Incoming Material Quality ── */}
+                  {(() => {
+                    const m = d.incomingMaterialQualityImpact;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="Q" isEven={n % 2 === 0}
+                        checkpoint="Production line affected due to poor Quality of incoming material" target="0"
+                        valueCell={<ValCell val={m.actual}
+                          bg={m.actual > 0 ? COLOR.warn : COLOR.ok} textColor={m.actual > 0 ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(m.causeActions||[],'cause')} actionRows={lines(m.causeActions||[],'action')}
+                        responsibleRows={lines(m.causeActions||[],'responsible')} targetDateRows={lines(m.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 14. Absenteeism ── */}
+                  {(() => {
+                    const m = d.absenteeism;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="M" isEven={n % 2 === 0}
+                        checkpoint="Unauthorised absentisim (Prd & Others)" target="0"
+                        valueCell={<ValCell val={m.actual}
+                          bg={m.actual > 0 ? COLOR.warn : COLOR.ok} textColor={m.actual > 0 ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(m.causeActions||[],'cause')} actionRows={lines(m.causeActions||[],'action')}
+                        responsibleRows={lines(m.causeActions||[],'responsible')} targetDateRows={lines(m.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 15. Machine Breakdown ── */}
+                  {(() => {
+                    const m = d.machineBreakdown;
+                    const missed = m.actual > m.target;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="P" isEven={n % 2 === 0}
+                        checkpoint="Breakdown of machine" target="30 min max"
+                        valueCell={<ValCell val={m.actual > 0 ? `${m.actual} min` : '0'}
+                          bg={missed ? COLOR.warn : COLOR.ok} textColor={missed ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(m.causeActions||[],'cause')} actionRows={lines(m.causeActions||[],'action')}
+                        responsibleRows={lines(m.causeActions||[],'responsible')} targetDateRows={lines(m.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 16. Electricity Daily ── */}
+                  {(() => {
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="C" isEven={n % 2 === 0}
+                        checkpoint="Unit consumption Last Day (KVAH)" target="—"
+                        valueCell={<ValCell val={`${u.electricityKVAH} kVAh`} bg={COLOR.na} sub={`Shift ${u.electricityShift}`} />}
+                        causesRows="—" actionRows="—" responsibleRows="—" targetDateRows="—" />
+                    );
+                  })()}
+
+                  {/* ── 17. Electricity YTD (PURPLE) ── */}
+                  {(() => {
+                    const n = ns();
+                    return <PurpleRow key={n} sl={n} mp="C" checkpoint="Unit Consumption Till date (YTD)" value={`${u.cumulativeElectricity} kVAh`} />;
+                  })()}
+
+                  {/* ── 18. Diesel Daily ── */}
+                  {(() => {
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="C" isEven={n % 2 === 0}
+                        checkpoint="Diesel consumption Last Day (LTR)" target="0"
+                        valueCell={<ValCell val={`${u.dieselLTR} L`}
+                          bg={u.dieselLTR > 0 ? COLOR.warn : COLOR.ok}
+                          textColor={u.dieselLTR > 0 ? COLOR.warnText : COLOR.okText}
+                          sub={`Shift ${u.dieselShift}`} />}
+                        causesRows="—" actionRows="—" responsibleRows="—" targetDateRows="—" />
+                    );
+                  })()}
+
+                  {/* ── 19. Diesel YTD (PURPLE) ── */}
+                  {(() => {
+                    const n = ns();
+                    return <PurpleRow key={n} sl={n} mp="C" checkpoint="Diesel consumption Till date (LTR)" value={`${u.cumulativeDiesel} L`} target="0" />;
+                  })()}
+
+                  {/* ── 20. Power Factor ── */}
+                  {(() => {
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="C" isEven={n % 2 === 0}
+                        checkpoint="Power Factor" target="95–99"
+                        valueCell={<ValCell val={u.powerFactor > 0 ? pct(u.powerFactor) : '—'}
+                          bg={u.powerFactor >= 95 ? COLOR.ok : (u.powerFactor === 0 ? COLOR.na : COLOR.warn)}
+                          textColor={u.powerFactor >= 95 ? COLOR.okText : (u.powerFactor === 0 ? COLOR.naText : COLOR.warnText)} />}
+                        causesRows="—" actionRows="—" responsibleRows="—" targetDateRows="—" />
+                    );
+                  })()}
+
+                  {/* ── 21. Sales ── */}
+                  {(() => {
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="C" isEven={n % 2 === 0}
+                        checkpoint="Sales Values (Last Day & Cumm)" target="—"
+                        valueCell={<ValCell val={`₹${s2.dailySales}L`} bg={COLOR.na} sub={`Cumm: ₹${s2.cumulativeSales}L`} />}
+                        causesRows="—" actionRows="—" responsibleRows="—" targetDateRows="—" />
+                    );
+                  })()}
+
+                  {/* ── 22. Training Daily ── */}
+                  {(() => {
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="M" isEven={n % 2 === 0}
+                        checkpoint={`Last day training hours${t.topic ? ` — ${t.topic}` : ''}`}
+                        target="30 min"
+                        valueCell={<ValCell val={`${t.dailyHours} hrs`}
+                          bg={t.dailyHours >= 0.5 ? COLOR.ok : COLOR.warn}
+                          textColor={t.dailyHours >= 0.5 ? COLOR.okText : COLOR.warnText} />}
+                        causesRows="—" actionRows="—" responsibleRows="—" targetDateRows="—" />
+                    );
+                  })()}
+
+                  {/* ── 23. Cumulative Training (CYAN) ── */}
+                  {(() => {
+                    const n = ns();
+                    return <CyanRow key={n} sl={n} mp="M" checkpoint="Cumulative training hours" value={`${t.cumulativeHours} hrs`} />;
+                  })()}
+
+                  {/* ── 24. 1st Pass OK ── */}
+                  {(() => {
+                    const missed = q.firstPassOKRatio > 0 && q.firstPassOKRatio < 100;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="Q" isEven={n % 2 === 0}
+                        checkpoint="Last day 1st pass ok Ratio" target="100%"
+                        valueCell={<ValCell val={q.firstPassOKRatio > 0 ? pct(q.firstPassOKRatio) : '—'}
+                          bg={missed ? COLOR.warn : COLOR.ok} textColor={missed ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(q.firstPassCauseActions||[],'cause')} actionRows={lines(q.firstPassCauseActions||[],'action')}
+                        responsibleRows={lines(q.firstPassCauseActions||[],'responsible')} targetDateRows={lines(q.firstPassCauseActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 25. 1st Pass PDI ── */}
+                  {(() => {
+                    const missed = q.pdiRatio > 0 && q.pdiRatio < 100;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="Q" isEven={n % 2 === 0}
+                        checkpoint="Last Day 1st Pass ok Ratio-PDI" target="100%"
+                        valueCell={<ValCell val={q.pdiRatio > 0 ? pct(q.pdiRatio) : '—'}
+                          bg={missed ? COLOR.warn : COLOR.ok} textColor={missed ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(q.pdiCauseActions||[],'cause')} actionRows={lines(q.pdiCauseActions||[],'action')}
+                        responsibleRows={lines(q.pdiCauseActions||[],'responsible')} targetDateRows={lines(q.pdiCauseActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 26. Supplier Rejection (PURPLE) ── */}
+                  {(() => {
+                    const count = d.supplierRejectionCount || 0;
+                    const n = ns();
+                    return (
+                      <PurpleRow key={n} sl={n} mp="Q" checkpoint="Last day supplier rejection" target="0 PPM"
+                        value={<>
+                          {count > 0 ? `${count} rejection${count>1?'s':''}` : '0'}
+                          {count > 0 && <div className="text-[9px] font-normal opacity-70 mt-0.5">
+                            {sr.map(r=>r.reason||r.supplierId).join(' · ')}
+                          </div>}
+                        </>} />
+                    );
+                  })()}
+
+                  {/* ── 27. PDI Issue ── */}
+                  {(() => {
+                    const m = d.pdiIssues;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="Q" isEven={n % 2 === 0}
+                        checkpoint="Last Day PDI Issue" target="0"
+                        valueCell={<ValCell val={yesNo(m.hasIssue)}
+                          bg={m.hasIssue ? COLOR.bad : COLOR.ok} textColor={m.hasIssue ? COLOR.badText : COLOR.okText} />}
+                        causesRows={lines(m.causeActions||[],'cause')} actionRows={lines(m.causeActions||[],'action')}
+                        responsibleRows={lines(m.causeActions||[],'responsible')} targetDateRows={lines(m.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 28. Field Complaints ── */}
+                  {(() => {
+                    const m = d.fieldComplaints;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="Q" isEven={n % 2 === 0}
+                        checkpoint="Last day field complaints/Issue reported in numbers" target="0 Nos"
+                        valueCell={<ValCell val={yesNo(m.hasIssue)}
+                          bg={m.hasIssue ? COLOR.bad : COLOR.ok} textColor={m.hasIssue ? COLOR.badText : COLOR.okText} />}
+                        causesRows={lines(m.causeActions||[],'cause')} actionRows={lines(m.causeActions||[],'action')}
+                        responsibleRows={lines(m.causeActions||[],'responsible')} targetDateRows={lines(m.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 29. SOP Non-Adherence ── */}
+                  {(() => {
+                    const m = d.sopNonAdherence;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="Q" isEven={n % 2 === 0}
+                        checkpoint="Is there any SOP non adherance found in yesterdays LPA audit" target="—"
+                        valueCell={<ValCell val={yesNo(m.hasIssue)}
+                          bg={m.hasIssue ? COLOR.warn : COLOR.ok} textColor={m.hasIssue ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(m.causeActions||[],'cause')} actionRows={lines(m.causeActions||[],'action')}
+                        responsibleRows={lines(m.causeActions||[],'responsible')} targetDateRows={lines(m.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 30. Fixture Issues ── */}
+                  {(() => {
+                    const m = d.fixtureIssues;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="D" isEven={n % 2 === 0}
+                        checkpoint="Line Issue/Stop Due to fixtures" target="0"
+                        valueCell={<ValCell val={yesNo(m.hasIssue)}
+                          bg={m.hasIssue ? COLOR.warn : COLOR.ok} textColor={m.hasIssue ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(m.causeActions||[],'cause')} actionRows={lines(m.causeActions||[],'action')}
+                        responsibleRows={lines(m.causeActions||[],'responsible')} targetDateRows={lines(m.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── 31. Pallet / Trolley ── */}
+                  {(() => {
+                    const m = d.palletTrolleyIssues;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="P" isEven={n % 2 === 0}
+                        checkpoint="Any Issue Related to Pallets Or Trolley (Internal & External)" target="0"
+                        valueCell={<ValCell val={yesNo(m.hasIssue)}
+                          bg={m.hasIssue ? COLOR.warn : COLOR.ok} textColor={m.hasIssue ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(m.causeActions||[],'cause')} actionRows={lines(m.causeActions||[],'action')}
+                        responsibleRows={lines(m.causeActions||[],'responsible')} targetDateRows={lines(m.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {/* ── Extra fields not in screenshot but present in data ── */}
+                  {d.materialShortageIssue && (() => {
+                    const ms = d.materialShortageIssue;
+                    const qty = ms.quantity || 0;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="P" isEven={n % 2 === 0}
+                        checkpoint="Material Shortage Issue" target="0"
+                        valueCell={<ValCell val={qty > 0 ? `${qty} nos` : '0'}
+                          bg={qty > 0 ? COLOR.warn : COLOR.ok} textColor={qty > 0 ? COLOR.warnText : COLOR.okText} />}
+                        causesRows={lines(ms.causeActions||[],'cause')} actionRows={lines(ms.causeActions||[],'action')}
+                        responsibleRows={lines(ms.causeActions||[],'responsible')} targetDateRows={lines(ms.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {d.otherCriticalIssue && (() => {
+                    const m = d.otherCriticalIssue;
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="P" isEven={n % 2 === 0}
+                        checkpoint="Other Critical Issue" target="0"
+                        valueCell={<ValCell val={yesNo(m.hasIssue)}
+                          bg={m.hasIssue ? COLOR.bad : COLOR.ok} textColor={m.hasIssue ? COLOR.badText : COLOR.okText} />}
+                        causesRows={lines(m.causeActions||[],'cause')} actionRows={lines(m.causeActions||[],'action')}
+                        responsibleRows={lines(m.causeActions||[],'responsible')} targetDateRows={lines(m.causeActions||[],'targetDate')} />
+                    );
+                  })()}
+
+                  {d.otherField1 && (() => {
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="—" isEven={n % 2 === 0}
+                        checkpoint="Others / Remarks" target="—"
+                        valueCell={<ValCell val={d.otherField1} bg={COLOR.na} />}
+                        causesRows="—" actionRows="—" responsibleRows="—" targetDateRows="—" />
+                    );
+                  })()}
+
+                  {d.otherField2 && (() => {
+                    const n = ns();
+                    return (
+                      <ExcelRow key={n} sl={n} mp="—" isEven={n % 2 === 0}
+                        checkpoint="Others / Remarks 2" target="—"
+                        valueCell={<ValCell val={d.otherField2} bg={COLOR.na} />}
+                        causesRows="—" actionRows="—" responsibleRows="—" targetDateRows="—" />
+                    );
+                  })()}
+
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer */}
+            <div className="px-4 py-2.5 border-t border-[#E2E8F0] bg-[#F8FAFC] text-[10px] text-[#94A3B8] flex items-center justify-between">
+              <span>Report Date: <span className="font-semibold text-[#64748B]">{d.date}</span></span>
             </div>
           </div>
-        </CardContent>
-      </Card> */}
-
-
-
-      {/* View Entry Dialog */}
-<div className='w-full'>
-  <div className=" overflow-y-auto p-0">
-    <div className="px-4 py-3 border-b border-[#E5E5E5] sticky top-0 bg-white z-10">
-      <div className="text-sm font-bold text-[#1A1A1A] uppercase tracking-wide">
-        Daily Report —{" "}
-        {data?.report_date &&
-          new Date(data.report_date).toLocaleDateString("en-IN", {
-            weekday: "long",
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-          })}
-        <span className="ml-4 text-xs font-normal text-[#666666]">
-          Submitted by: {data?.submitted_by}
-        </span>
-      </div>
-    </div>
-
-    {data && (
-      <div className="overflow-x-auto">
-        <table
-          className="w-full text-xs border-collapse"
-          style={{ fontFamily: "Calibri, Arial, sans-serif" }}
-        >
-          <thead>
-            <tr style={{ background: "#b38c38ff", color: "#fff" }}>
-              <th className="border border-[#333] px-2 py-2 text-left w-8">SI No</th>
-              <th className="border border-[#333] px-2 py-2 text-left min-w-[220px]">Check Points</th>
-              <th className="border border-[#333] px-2 py-2 text-center w-8">MP</th>
-              <th className="border border-[#333] px-2 py-2 text-center w-16">Owner</th>
-              <th className="border border-[#333] px-2 py-2 text-center w-20">Target</th>
-              <th className="border border-[#333] px-2 py-2 text-center min-w-[160px]" colSpan={2}>
-                Actual / Value
-              </th>
-              <th className="border border-[#333] px-2 py-2 text-center w-20"
-                style={{ background: "#4DD0A4", color: "#1A1A1A" }}>Total</th>
-              <th className="border border-[#333] px-2 py-2 text-left min-w-[160px]"
-                style={{ background: "#4DD0A4", color: "#1A1A1A" }}>Probable Causes</th>
-              <th className="border border-[#333] px-2 py-2 text-left min-w-[160px]"
-                style={{ background: "#4DD0A4", color: "#1A1A1A" }}>Action Planned</th>
-              <th className="border border-[#333] px-2 py-2 text-center w-20"
-                style={{ background: "#4DD0A4", color: "#1A1A1A" }}>Responsible</th>
-              <th className="border border-[#333] px-2 py-2 text-center w-20"
-                style={{ background: "#4DD0A4", color: "#1A1A1A" }}>Target Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {/* ── SAFETY ── */}
-
-            {/* Row 1 – Accident */}
-            <ExcelRow
-              sl={1}
-              mp="S"
-              checkpoint="Last day Accident / Incident / Near Miss (Reported)"
-              owner={data.f01_accident.owner_name}
-              target={data.f01_accident.target}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center" colSpan={2}
-                  style={{ background: data.f01_accident.entries.length > 0 ? "#FED7AA" : "#C6F6D5" }}>
-                  {data.f01_accident.entries.length > 0
-                    ? data.f01_accident.entries.map((e) => e.type.toUpperCase()).join(", ")
-                    : "0"}
-                </td>
-              }
-              total={data.f01_accident.entries.length}
-              totalBg={data.f01_accident.entries.length > data.f01_accident.target ? "#FEB2B2" : "#C6F6D5"}
-              causes={data.f01_accident.entries.map((e) => e.probable_cause).join(", ")}
-              action={data.f01_accident.entries.map((e) => e.action).join(", ")}
-              responsible={data.f01_accident.entries.map((e) => e.responsible).join(", ")}
-              targetDate={data.f01_accident.entries[0]?.target_date ?? "—"}
-            />
-
-            {/* ── QUALITY ── */}
-
-            {/* Row 2 – Customer Rejection */}
-            <ExcelRow
-              sl={2}
-              mp="Q"
-              checkpoint="Last day Customer Rejection (TML | ALW | PNR)"
-              owner={data.f02_customer_rejection.owner_name}
-              target={`${data.f02_customer_rejection.target_ppm} PPM`}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center" colSpan={2}
-                  style={{ background: "#FED7AA" }}>
-                  {data.f02_customer_rejection.entries.map(
-                    (e) => `${e.customer_name}: ${e.quantity_ppm} PPM`
-                  ).join(" | ")}
-                </td>
-              }
-              total={data.f02_customer_rejection.entries.reduce((s, e) => s + e.quantity_ppm, 0) + " PPM"}
-              totalBg="#FEB2B2"
-              causes={data.f02_customer_rejection.entries.map((e) => e.reject_reason).join(", ")}
-              action={data.f02_customer_rejection.action}
-              responsible={data.f02_customer_rejection.responsible}
-              targetDate={data.f02_customer_rejection.target_date}
-            />
-
-            {/* Row 24 – First Pass OK */}
-            <ExcelRow
-              sl={24}
-              mp="Q"
-              checkpoint="First Pass OK %"
-              owner={data.f24_first_pass_ok.owner_name}
-              target={`${data.f24_first_pass_ok.target_pct}%`}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f24_first_pass_ok.actual_pct >= data.f24_first_pass_ok.target_pct ? "#C6F6D5" : "#FED7AA" }}>
-                  {data.f24_first_pass_ok.actual_pct}%
-                </td>
-              }
-              total={`${data.f24_first_pass_ok.actual_pct}%`}
-              totalBg={data.f24_first_pass_ok.actual_pct >= data.f24_first_pass_ok.target_pct ? "#C6F6D5" : "#FED7AA"}
-              causes={data.f24_first_pass_ok.probable_cause}
-              action={data.f24_first_pass_ok.action}
-              responsible={data.f24_first_pass_ok.responsible}
-              targetDate={data.f24_first_pass_ok.target_date}
-            />
-
-            {/* Row 25 – First Pass PDI */}
-            <ExcelRow
-              sl={25}
-              mp="Q"
-              checkpoint="First Pass PDI %"
-              owner={data.f25_first_pass_pdi.owner_name}
-              target={`${data.f25_first_pass_pdi.target_pct}%`}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f25_first_pass_pdi.actual_pct >= data.f25_first_pass_pdi.target_pct ? "#C6F6D5" : "#FED7AA" }}>
-                  {data.f25_first_pass_pdi.actual_pct}%
-                </td>
-              }
-              total={`${data.f25_first_pass_pdi.actual_pct}%`}
-              totalBg={data.f25_first_pass_pdi.actual_pct >= data.f25_first_pass_pdi.target_pct ? "#C6F6D5" : "#FED7AA"}
-              causes={data.f25_first_pass_pdi.probable_cause}
-              action={data.f25_first_pass_pdi.action}
-              responsible={data.f25_first_pass_pdi.responsible}
-              targetDate={data.f25_first_pass_pdi.target_date}
-            />
-
-            {/* Row 12 – Line Quality Issue */}
-            <ExcelRow
-              sl={12}
-              mp="Q"
-              checkpoint="Line Quality Issue"
-              owner={data.f12_line_quality_issue.owner_name}
-              target={data.f12_line_quality_issue.target}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f12_line_quality_issue.actual > data.f12_line_quality_issue.target ? "#FED7AA" : "#C6F6D5" }}>
-                  {data.f12_line_quality_issue.actual}
-                </td>
-              }
-              total={data.f12_line_quality_issue.actual}
-              totalBg={data.f12_line_quality_issue.actual > data.f12_line_quality_issue.target ? "#FEB2B2" : "#C6F6D5"}
-              causes={data.f12_line_quality_issue.reason}
-              action={data.f12_line_quality_issue.action}
-              responsible={data.f12_line_quality_issue.responsible}
-              targetDate={data.f12_line_quality_issue.target_date}
-            />
-
-            {/* Row 13 – Poor Incoming Material */}
-            <ExcelRow
-              sl={13}
-              mp="Q"
-              checkpoint="Production line affected due to poor Quality of incoming material"
-              owner={data.f13_poor_incoming_material.owner_name}
-              target={0}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: "#FED7AA" }}>
-                  {data.f13_poor_incoming_material.quantity}
-                </td>
-              }
-              total={data.f13_poor_incoming_material.quantity}
-              totalBg="#FEB2B2"
-              causes={data.f13_poor_incoming_material.probable_causes?.join(", ")}
-              action={data.f13_poor_incoming_material.action}
-              responsible={data.f13_poor_incoming_material.responsible}
-              targetDate={data.f13_poor_incoming_material.target_date}
-            />
-
-            {/* Row 26 – Supplier Rejection */}
-            <ExcelRow
-              sl={26}
-              mp="Q"
-              checkpoint="Supplier Rejection (PPM)"
-              owner={data.f26_supplier_rejection.owner_name}
-              target={`${data.f26_supplier_rejection.target_ppm} PPM`}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center" colSpan={2}
-                  style={{ background: "#FED7AA" }}>
-                  {data.f26_supplier_rejection.entries.map(
-                    (e) => `${e.supplier_name}: ${e.rejected_qty} qty`
-                  ).join(" | ")}
-                </td>
-              }
-              total={`${data.f26_supplier_rejection.cumulative_ppm} PPM`}
-              totalBg="#FEB2B2"
-              causes={data.f26_supplier_rejection.entries.map((e) => e.cause).join(", ")}
-              action={data.f26_supplier_rejection.action}
-              responsible={data.f26_supplier_rejection.responsible}
-              targetDate={data.f26_supplier_rejection.target_date}
-            />
-
-            {/* Row 27 – PDI Issue */}
-            <ExcelRow
-              sl={27}
-              mp="Q"
-              checkpoint="PDI Issue (nos.)"
-              owner={data.f27_pdi_issue.owner_name}
-              target={`${data.f27_pdi_issue.target_ppm} PPM`}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f27_pdi_issue.issue_count > 0 ? "#FED7AA" : "#C6F6D5" }}>
-                  {data.f27_pdi_issue.issue_count}
-                </td>
-              }
-              total={data.f27_pdi_issue.issue_count}
-              totalBg={data.f27_pdi_issue.issue_count > 0 ? "#FEB2B2" : "#C6F6D5"}
-              causes={data.f27_pdi_issue.cause}
-              action={data.f27_pdi_issue.action}
-              responsible={data.f27_pdi_issue.responsible}
-              targetDate={data.f27_pdi_issue.target_date}
-            />
-
-            {/* Row 28 – Field Complaints */}
-            <ExcelRow
-              sl={28}
-              mp="Q"
-              checkpoint="Field Complaints (nos.)"
-              owner={data.f28_field_complaints.owner_name}
-              target={0}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f28_field_complaints.quantity > 0 ? "#FED7AA" : "#C6F6D5" }}>
-                  {data.f28_field_complaints.quantity}
-                </td>
-              }
-              total={data.f28_field_complaints.quantity}
-              totalBg={data.f28_field_complaints.quantity > 0 ? "#FEB2B2" : "#C6F6D5"}
-              causes={data.f28_field_complaints.descriptions?.join(", ")}
-              action={data.f28_field_complaints.action}
-              responsible={data.f28_field_complaints.responsible}
-              targetDate={data.f28_field_complaints.target_date}
-            />
-
-            {/* ── PRODUCTION ── */}
-
-            {/* Row 3 – Production */}
-            <tr style={{ background: "#EBF8FF" }}>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold">3</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 font-medium">Last Day Production</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center text-[#666666]">P</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f03_production.owner_name}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f03_production.total_target}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center" colSpan={2}>
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-[#666666]">
-                      <th className="text-center pb-0.5">Type</th>
-                      <th className="text-center pb-0.5">Tgt</th>
-                      <th className="text-center pb-0.5">Act</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.f03_production.parts.map((p, i) => (
-                      <tr key={i} style={{ background: p.actual >= p.target ? "#C6F6D5" : "#FED7AA" }}>
-                        <td className="text-center px-1">{p.part_type}</td>
-                        <td className="text-center px-1">{p.target}</td>
-                        <td className="text-center px-1 font-semibold">{p.actual}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-bold"
-                style={{ background: data.f03_production.total_actual >= data.f03_production.total_target ? "#C6F6D5" : "#FED7AA" }}>
-                {data.f03_production.total_actual} / {data.f03_production.total_target}
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-[#666666]">—</td>
-              <td className="border border-[#D4D4D4] px-2 py-1">{data.f03_production.action}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f03_production.responsible}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f03_production.target_date}</td>
-            </tr>
-
-            {/* Row 4 – Cycle Time */}
-            <ExcelRow
-              sl={4}
-              mp="P"
-              checkpoint="Cycle Time (Front / Rear)"
-              owner={data.f04_cycle_time.owner_name}
-              target={`< ${data.f04_cycle_time.target_minutes} Min`}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center" colSpan={2}
-                  style={{ background: "#FED7AA" }}>
-                  F: {data.f04_cycle_time.front_minutes}m &nbsp;|&nbsp; R: {data.f04_cycle_time.rear_minutes}m
-                </td>
-              }
-              total={`${data.f04_cycle_time.total_avg_minutes} min`}
-              totalBg={data.f04_cycle_time.total_avg_minutes <= data.f04_cycle_time.target_minutes ? "#C6F6D5" : "#FED7AA"}
-              causes={data.f04_cycle_time.probable_cause}
-              action={data.f04_cycle_time.action}
-              responsible={data.f04_cycle_time.responsible}
-              targetDate={data.f04_cycle_time.target_date}
-            />
-
-            {/* Row 5 – Per Man Per Day */}
-            <ExcelRow
-              sl={5}
-              mp="P"
-              checkpoint="Per Man Per Day Prop Shaft Qty (Yesterday)"
-              owner={data.f05_per_man_per_day.owner_name}
-              target={data.f05_per_man_per_day.target}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f05_per_man_per_day.actual >= data.f05_per_man_per_day.target ? "#C6F6D5" : "#FED7AA" }}>
-                  {data.f05_per_man_per_day.actual}
-                </td>
-              }
-              total={data.f05_per_man_per_day.actual}
-              totalBg={data.f05_per_man_per_day.actual >= data.f05_per_man_per_day.target ? "#C6F6D5" : "#FED7AA"}
-              causes={data.f05_per_man_per_day.probable_cause}
-              action={data.f05_per_man_per_day.action}
-              responsible={data.f05_per_man_per_day.responsible}
-              targetDate={data.f05_per_man_per_day.target_date}
-            />
-
-            {/* Row 9 – Prod Plan Adherence */}
-            <ExcelRow
-              sl={9}
-              mp="P"
-              checkpoint="Production Plan Adherence %age (Yesterday)"
-              owner={data.f09_prod_plan_adherence.owner_name}
-              target={`${data.f09_prod_plan_adherence.target_pct}%`}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f09_prod_plan_adherence.actual_pct >= data.f09_prod_plan_adherence.target_pct ? "#C6F6D5" : "#FED7AA" }}>
-                  {data.f09_prod_plan_adherence.actual_pct}%
-                </td>
-              }
-              total={`${data.f09_prod_plan_adherence.actual_pct}%`}
-              totalBg={data.f09_prod_plan_adherence.actual_pct >= data.f09_prod_plan_adherence.target_pct ? "#C6F6D5" : "#FED7AA"}
-              causes={data.f09_prod_plan_adherence.reasons?.join(", ")}
-              action={data.f09_prod_plan_adherence.action}
-              responsible={data.f09_prod_plan_adherence.responsible}
-              targetDate={data.f09_prod_plan_adherence.target_date}
-            />
-
-            {/* Row 11 – Production Hours Loss */}
-            <ExcelRow
-              sl={11}
-              mp="P"
-              checkpoint="Production Hours Loss for Material Shortage"
-              owner={data.f11_prod_hours_loss.owner_name}
-              target={data.f11_prod_hours_loss.target}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f11_prod_hours_loss.actual_hours > data.f11_prod_hours_loss.target ? "#FED7AA" : "#C6F6D5" }}>
-                  {data.f11_prod_hours_loss.actual_hours} hrs
-                </td>
-              }
-              total={`${data.f11_prod_hours_loss.actual_hours} hrs`}
-              totalBg={data.f11_prod_hours_loss.actual_hours > data.f11_prod_hours_loss.target ? "#FEB2B2" : "#C6F6D5"}
-              causes={data.f11_prod_hours_loss.reason}
-              action={data.f11_prod_hours_loss.action}
-              responsible={data.f11_prod_hours_loss.responsible}
-              targetDate={data.f11_prod_hours_loss.target_date}
-            />
-
-            {/* Row 29 – SOP Non-Adherence */}
-            <ExcelRow
-              sl={29}
-              mp="P"
-              checkpoint="SOP Non-Adherence"
-              owner={data.f29_sop_non_adherence.owner_name}
-              target="0"
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f29_sop_non_adherence.found ? "#FED7AA" : "#C6F6D5" }}>
-                  {data.f29_sop_non_adherence.found ? "YES" : "NO"}
-                </td>
-              }
-              total={data.f29_sop_non_adherence.found ? "Found" : "None"}
-              totalBg={data.f29_sop_non_adherence.found ? "#FEB2B2" : "#C6F6D5"}
-              causes={data.f29_sop_non_adherence.descriptions?.join(", ")}
-              action={data.f29_sop_non_adherence.action}
-              responsible={data.f29_sop_non_adherence.responsible}
-              targetDate={data.f29_sop_non_adherence.target_date}
-            />
-
-            {/* ── DISPATCH / DELIVERY ── */}
-
-            {/* Row 8 – Dispatch */}
-            <tr style={{ background: "#FAF5FF" }}>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold">8</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 font-medium">Last Day Dispatch (TML | ALW | PNR)</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center text-[#666666]">S</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f08_dispatch.owner_name}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">—</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center" colSpan={2}>
-                {data.f08_dispatch.entries.map((e, i) => (
-                  <div key={i}>
-                    <span className="font-semibold">{e.customer_name}:</span>{" "}
-                    {e.parts.map((p) => `${p.part_type.toUpperCase()} ${p.qty}`).join(" | ")}
-                  </div>
-                ))}
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-bold" style={{ background: "#E9D8FD" }}>
-                {data.f08_dispatch.entries.reduce((s, e) => s + e.parts.reduce((ps, p) => ps + p.qty, 0), 0)}
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-[#666666]">{data.f08_dispatch.probable_cause}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1">{data.f08_dispatch.action}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f08_dispatch.responsible}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f08_dispatch.target_date}</td>
-            </tr>
-
-            {/* Row 10 – OTIF */}
-            <ExcelRow
-              sl={10}
-              mp="D"
-              checkpoint="On Time in Full Schedule Adherence %age (Yesterday)"
-              owner={data.f10_otif_adherence.owner_name}
-              target={`${data.f10_otif_adherence.target_pct}%`}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f10_otif_adherence.actual_pct >= data.f10_otif_adherence.target_pct ? "#C6F6D5" : "#FED7AA" }}>
-                  {data.f10_otif_adherence.actual_pct}%
-                </td>
-              }
-              total={`${data.f10_otif_adherence.actual_pct}%`}
-              totalBg={data.f10_otif_adherence.actual_pct >= data.f10_otif_adherence.target_pct ? "#C6F6D5" : "#FED7AA"}
-              causes={data.f10_otif_adherence.reason}
-              action={data.f10_otif_adherence.action}
-              responsible={data.f10_otif_adherence.responsible}
-              targetDate={data.f10_otif_adherence.target_date}
-            />
-
-            {/* ── MANPOWER ── */}
-
-            {/* Row 6 – OT Hours Last Day */}
-            <tr style={{ background: "#F0FFF4" }}>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold">6</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 font-medium">Last Day OT Hours (Prd, QA, Main, Mater, Engg, Planning)</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center text-[#666666]">C</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f06_ot_hours_last_day.owner_name}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f06_ot_hours_last_day.target}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center" colSpan={2}>
-                {data.f06_ot_hours_last_day.entries.map((e, i) => (
-                  <div key={i}>{e.department_name}: {e.ot_hours}h ({e.reason})</div>
-                ))}
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-bold"
-                style={{ background: "#C6F6D5" }}>
-                {data.f06_ot_hours_last_day.entries.reduce((s, e) => s + e.ot_hours, 0)}
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-[#666666]">—</td>
-              <td className="border border-[#D4D4D4] px-2 py-1">{data.f06_ot_hours_last_day.action}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f06_ot_hours_last_day.responsible}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f06_ot_hours_last_day.target_date}</td>
-            </tr>
-
-            {/* Row 7 – Cumulative OT */}
-            <tr style={{ background: "#F0FFF4" }}>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold">7</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 font-medium">Cumulative OT Hours</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center text-[#666666]">C</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f07_ot_hours_cumulative.owner_name}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">—</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                style={{ background: "#C6F6D5" }}>
-                {data.f07_ot_hours_cumulative.cumulative_hours} hrs
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-bold" style={{ background: "#C6F6D5" }}>
-                {data.f07_ot_hours_cumulative.cumulative_hours}
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1" colSpan={4} />
-            </tr>
-
-            {/* Row 14 – Absenteeism */}
-            <ExcelRow
-              sl={14}
-              mp="M"
-              checkpoint="Unauthorised Absenteeism (Prd & Others)"
-              owner={data.f14_absenteeism.owner_name}
-              target={data.f14_absenteeism.target}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f14_absenteeism.absent_count > data.f14_absenteeism.target ? "#FED7AA" : "#C6F6D5" }}>
-                  {data.f14_absenteeism.absent_count}
-                </td>
-              }
-              total={data.f14_absenteeism.absent_count}
-              totalBg={data.f14_absenteeism.absent_count > data.f14_absenteeism.target ? "#FEB2B2" : "#C6F6D5"}
-              causes={data.f14_absenteeism.possible_causes?.join(", ")}
-              action={data.f14_absenteeism.action}
-              responsible={data.f14_absenteeism.responsible}
-              targetDate={data.f14_absenteeism.target_date}
-            />
-
-            {/* ── MAINTENANCE ── */}
-
-            {/* Row 15 – Machine Breakdown */}
-            <tr style={{ background: "#FFFAF0" }}>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold">15</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 font-medium">Breakdown of Machine</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center text-[#666666]">P</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f15_machine_breakdown.owner_name}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f15_machine_breakdown.target_minutes} min max</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center" colSpan={2}>
-                {data.f15_machine_breakdown.entries.map((e, i) => (
-                  <div key={i}>{e.machine_name}: {e.breakdown_time_minutes}m — {e.probable_cause}</div>
-                ))}
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-bold"
-                style={{ background: "#FED7AA" }}>
-                {data.f15_machine_breakdown.entries.reduce((s, e) => s + e.breakdown_time_minutes, 0)} min
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-[#666666]">
-                {data.f15_machine_breakdown.entries.map((e) => e.probable_cause).join(", ")}
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1">{data.f15_machine_breakdown.action}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f15_machine_breakdown.responsible}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f15_machine_breakdown.target_date}</td>
-            </tr>
-
-            {/* Row 30 – Fixture Issue */}
-            <ExcelRow
-              sl={30}
-              mp="P"
-              checkpoint="Fixture Issue"
-              owner={data.f30_fixture_issue.owner_name}
-              target="None"
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center" colSpan={2}
-                  style={{ background: data.f30_fixture_issue.has_issue ? "#FED7AA" : "#C6F6D5" }}>
-                  {data.f30_fixture_issue.description} ({data.f30_fixture_issue.worker_name})
-                </td>
-              }
-              total={data.f30_fixture_issue.has_issue ? "Yes" : "No"}
-              totalBg={data.f30_fixture_issue.has_issue ? "#FEB2B2" : "#C6F6D5"}
-              causes={data.f30_fixture_issue.description}
-              action={data.f30_fixture_issue.action}
-              responsible={data.f30_fixture_issue.responsible}
-              targetDate={data.f30_fixture_issue.target_date}
-            />
-
-            {/* Row 31 – Pallet/Trolley Issue */}
-            <ExcelRow
-              sl={31}
-              mp="P"
-              checkpoint="Pallet / Trolley Issue"
-              owner={data.f31_pallet_trolley_issue.owner_name}
-              target="None"
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center" colSpan={2}
-                  style={{ background: data.f31_pallet_trolley_issue.has_issue ? "#FED7AA" : "#C6F6D5" }}>
-                  {data.f31_pallet_trolley_issue.description} ({data.f31_pallet_trolley_issue.worker_name})
-                </td>
-              }
-              total={data.f31_pallet_trolley_issue.has_issue ? "Yes" : "No"}
-              totalBg={data.f31_pallet_trolley_issue.has_issue ? "#FEB2B2" : "#C6F6D5"}
-              causes={data.f31_pallet_trolley_issue.description}
-              action={data.f31_pallet_trolley_issue.action}
-              responsible={data.f31_pallet_trolley_issue.responsible}
-              targetDate={data.f31_pallet_trolley_issue.target_date}
-            />
-
-            {/* ── ENERGY ── */}
-
-            {/* Row 16 */}
-            <ExcelRow
-              sl={16}
-              mp="C"
-              checkpoint="Unit Consumption Last Day (KVAH)"
-              owner={data.f16_unit_consumption_last_day.owner_name}
-              target="—"
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: "#FEFCBF" }}>
-                  {data.f16_unit_consumption_last_day.units_kvah} KVAH
-                </td>
-              }
-              total={`${data.f16_unit_consumption_last_day.units_kvah}`}
-              totalBg="#FEFCBF"
-              causes={data.f16_unit_consumption_last_day.possible_cause}
-              action={data.f16_unit_consumption_last_day.action}
-              responsible={data.f16_unit_consumption_last_day.responsible}
-              targetDate={data.f16_unit_consumption_last_day.target_date}
-            />
-
-            {/* Row 17 */}
-            <tr style={{ background: "#FFFFF0" }}>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold">17</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 font-medium">Unit Consumption Till Date (YTD)</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center text-[#666666]">C</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f17_unit_consumption_ytd.owner_name}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">—</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                style={{ background: "#FEFCBF" }}>
-                {data.f17_unit_consumption_ytd.cumulative_kvah} KVAH
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-bold" style={{ background: "#FEFCBF" }}>
-                {data.f17_unit_consumption_ytd.cumulative_kvah}
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1" colSpan={4} />
-            </tr>
-
-            {/* Row 18 – Diesel Last Day */}
-            <ExcelRow
-              sl={18}
-              mp="C"
-              checkpoint="Diesel Consumption Last Day (LTR)"
-              owner={data.f18_diesel_last_day.owner_name}
-              target={`${data.f18_diesel_last_day.target} LTR`}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f18_diesel_last_day.quantity_ltr > data.f18_diesel_last_day.target ? "#FED7AA" : "#C6F6D5" }}>
-                  {data.f18_diesel_last_day.quantity_ltr} LTR
-                </td>
-              }
-              total={`${data.f18_diesel_last_day.quantity_ltr}`}
-              totalBg={data.f18_diesel_last_day.quantity_ltr > data.f18_diesel_last_day.target ? "#FEB2B2" : "#C6F6D5"}
-              causes={data.f18_diesel_last_day.probable_cause}
-              action={data.f18_diesel_last_day.action}
-              responsible={data.f18_diesel_last_day.responsible}
-              targetDate={data.f18_diesel_last_day.target_date}
-            />
-
-            {/* Row 19 – Diesel YTD */}
-            <tr style={{ background: "#FFFFF0" }}>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold">19</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 font-medium">Diesel Consumption YTD</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center text-[#666666]">C</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f19_diesel_ytd.owner_name}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">—</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                style={{ background: "#FEFCBF" }}>
-                {data.f19_diesel_ytd.cumulative_ltr} LTR
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-bold" style={{ background: "#FEFCBF" }}>
-                {data.f19_diesel_ytd.cumulative_ltr}
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1" colSpan={4} />
-            </tr>
-
-            {/* Row 20 – Power Factor */}
-            <ExcelRow
-              sl={20}
-              mp="C"
-              checkpoint="Power Factor"
-              owner={data.f20_power_factor.owner_name}
-              target={`${data.f20_power_factor.target_pct}%`}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f20_power_factor.actual_pct >= data.f20_power_factor.target_pct ? "#C6F6D5" : "#FED7AA" }}>
-                  {data.f20_power_factor.actual_pct}%
-                </td>
-              }
-              total={`${data.f20_power_factor.actual_pct}%`}
-              totalBg={data.f20_power_factor.actual_pct >= data.f20_power_factor.target_pct ? "#C6F6D5" : "#FED7AA"}
-              causes={data.f20_power_factor.probable_cause}
-              action={data.f20_power_factor.action}
-              responsible={data.f20_power_factor.responsible}
-              targetDate={data.f20_power_factor.target_date}
-            />
-
-            {/* ── SALES & TRAINING ── */}
-
-            {/* Row 21 – Sales */}
-            <tr style={{ background: "#EBF8FF" }}>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold">21</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 font-medium">Sales</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center text-[#666666]">—</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f21_sales.owner_name}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">—</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center" style={{ background: "#BEE3F8" }}>
-                Last Day: ₹{data.f21_sales.last_day_lakhs}L
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center" style={{ background: "#BEE3F8" }}>
-                YTD: ₹{data.f21_sales.cumulative_lakhs}L
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-bold" style={{ background: "#BEE3F8" }}>
-                ₹{data.f21_sales.cumulative_lakhs}L
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1" colSpan={4} />
-            </tr>
-
-            {/* Row 22 – Training Last Day */}
-            <ExcelRow
-              sl={22}
-              mp="—"
-              checkpoint={`Training Last Day — Topic: ${data.f22_training_last_day.topic}`}
-              owner={data.f22_training_last_day.owner_name}
-              target={`${data.f22_training_last_day.target_minutes} min`}
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f22_training_last_day.training_minutes >= data.f22_training_last_day.target_minutes ? "#C6F6D5" : "#FED7AA" }}>
-                  {data.f22_training_last_day.training_minutes} min
-                </td>
-              }
-              total={`${data.f22_training_last_day.training_minutes} min`}
-              totalBg={data.f22_training_last_day.training_minutes >= data.f22_training_last_day.target_minutes ? "#C6F6D5" : "#FED7AA"}
-              causes={data.f22_training_last_day.probable_cause}
-              action={data.f22_training_last_day.action}
-              responsible={data.f22_training_last_day.responsible}
-              targetDate={data.f22_training_last_day.target_date}
-            />
-
-            {/* Row 23 – Training YTD */}
-            <tr style={{ background: "#EBF8FF" }}>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold">23</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 font-medium">Training Cumulative (YTD)</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center text-[#666666]">—</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">{data.f23_training_ytd.owner_name}</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center">—</td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                style={{ background: "#BEE3F8" }}>
-                {data.f23_training_ytd.cumulative_minutes} min
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1 text-center font-bold" style={{ background: "#BEE3F8" }}>
-                {data.f23_training_ytd.cumulative_minutes}
-              </td>
-              <td className="border border-[#D4D4D4] px-2 py-1" colSpan={4} />
-            </tr>
-
-            {/* ── CRITICAL ISSUES ── */}
-
-            {/* Row 32 – Material Shortage */}
-            <ExcelRow
-              sl={32}
-              mp="P"
-              checkpoint="Material Shortage"
-              owner={data.f32_material_shortage.owner_name}
-              target="None"
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f32_material_shortage.has_issue ? "#FED7AA" : "#C6F6D5" }}>
-                  {data.f32_material_shortage.descriptions?.join(", ")}
-                </td>
-              }
-              total={data.f32_material_shortage.has_issue ? "Yes" : "No"}
-              totalBg={data.f32_material_shortage.has_issue ? "#FEB2B2" : "#C6F6D5"}
-              causes={data.f32_material_shortage.descriptions?.join(", ")}
-              action={data.f32_material_shortage.action}
-              responsible={data.f32_material_shortage.responsible}
-              targetDate={data.f32_material_shortage.target_date}
-            />
-
-            {/* Row 33 – Other Critical Issue */}
-            <ExcelRow
-              sl={33}
-              mp="—"
-              checkpoint="Other Critical Issue"
-              owner={data.f33_other_critical_issue.owner_name}
-              target="None"
-              valueCell={
-                <td className="border border-[#D4D4D4] px-2 py-1 text-center font-semibold" colSpan={2}
-                  style={{ background: data.f33_other_critical_issue.has_issue ? "#FED7AA" : "#C6F6D5" }}>
-                  {data.f33_other_critical_issue.descriptions?.join(", ")}
-                </td>
-              }
-              total={data.f33_other_critical_issue.has_issue ? "Yes" : "No"}
-              totalBg={data.f33_other_critical_issue.has_issue ? "#FEB2B2" : "#C6F6D5"}
-              causes={data.f33_other_critical_issue.descriptions?.join(", ")}
-              action={data.f33_other_critical_issue.action}
-              responsible={data.f33_other_critical_issue.responsible}
-              targetDate={data.f33_other_critical_issue.target_date}
-            />
-          </tbody>
-        </table>
-      </div>
-    )}
-  </div>
-</div>
+        );
+      })()}
     </div>
   );
 }

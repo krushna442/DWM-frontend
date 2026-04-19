@@ -1,11 +1,12 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { PartType, Customer, Supplier, Machine, Department } from '@/types';
-import { 
-  defaultPartTypes, 
-  defaultCustomers, 
-  defaultSuppliers, 
-  defaultMachines, 
-  defaultDepartments 
+import { getMasterData, upsertMasterItem, deleteMasterItem } from '@/lib/api';
+import {
+  defaultPartTypes,
+  defaultCustomers,
+  defaultSuppliers,
+  defaultMachines,
+  defaultDepartments,
 } from '@/data/masterData';
 
 interface MasterDataContextType {
@@ -14,31 +15,32 @@ interface MasterDataContextType {
   suppliers: Supplier[];
   machines: Machine[];
   departments: Department[];
-  
+  isLoading: boolean;
+
   // Part Types
-  addPartType: (partType: Omit<PartType, 'id'>) => void;
-  updatePartType: (id: string, partType: Partial<PartType>) => void;
-  deletePartType: (id: string) => void;
-  
+  addPartType: (partType: Omit<PartType, 'id'>) => Promise<void>;
+  updatePartType: (id: string, partType: Partial<PartType>) => Promise<void>;
+  deletePartType: (id: string) => Promise<void>;
+
   // Customers
-  addCustomer: (customer: Omit<Customer, 'id'>) => void;
-  updateCustomer: (id: string, customer: Partial<Customer>) => void;
-  deleteCustomer: (id: string) => void;
-  
+  addCustomer: (customer: Omit<Customer, 'id'>) => Promise<void>;
+  updateCustomer: (id: string, customer: Partial<Customer>) => Promise<void>;
+  deleteCustomer: (id: string) => Promise<void>;
+
   // Suppliers
-  addSupplier: (supplier: Omit<Supplier, 'id'>) => void;
-  updateSupplier: (id: string, supplier: Partial<Supplier>) => void;
-  deleteSupplier: (id: string) => void;
-  
+  addSupplier: (supplier: Omit<Supplier, 'id'>) => Promise<void>;
+  updateSupplier: (id: string, supplier: Partial<Supplier>) => Promise<void>;
+  deleteSupplier: (id: string) => Promise<void>;
+
   // Machines
-  addMachine: (machine: Omit<Machine, 'id'>) => void;
-  updateMachine: (id: string, machine: Partial<Machine>) => void;
-  deleteMachine: (id: string) => void;
-  
+  addMachine: (machine: Omit<Machine, 'id'>) => Promise<void>;
+  updateMachine: (id: string, machine: Partial<Machine>) => Promise<void>;
+  deleteMachine: (id: string) => Promise<void>;
+
   // Departments
-  addDepartment: (department: Omit<Department, 'id'>) => void;
-  updateDepartment: (id: string, department: Partial<Department>) => void;
-  deleteDepartment: (id: string) => void;
+  addDepartment: (department: Omit<Department, 'id'>) => Promise<void>;
+  updateDepartment: (id: string, department: Partial<Department>) => Promise<void>;
+  deleteDepartment: (id: string) => Promise<void>;
 }
 
 const MasterDataContext = createContext<MasterDataContextType | undefined>(undefined);
@@ -49,96 +51,125 @@ export function MasterDataProvider({ children }: { children: React.ReactNode }) 
   const [suppliers, setSuppliers] = useState<Supplier[]>(defaultSuppliers);
   const [machines, setMachines] = useState<Machine[]>(defaultMachines);
   const [departments, setDepartments] = useState<Department[]>(defaultDepartments);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // ── Fetch from API on mount ────────────────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await getMasterData();
+        if (data.partTypes.length)   setPartTypes(data.partTypes);
+        if (data.customers.length)   setCustomers(data.customers);
+        if (data.suppliers.length)   setSuppliers(data.suppliers);
+        if (data.machines.length)    setMachines(data.machines);
+        if (data.departments.length) setDepartments(data.departments);
+      } catch {
+        // Fallback to defaults
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, []);
 
   const generateId = () => Math.random().toString(36).substr(2, 9);
 
+  // Helper for API mutations
+  const runMutation = async <T,>(
+    listKey: string,
+    action: 'upsert' | 'delete',
+    payload: any,
+    stateSetter: React.Dispatch<React.SetStateAction<T[]>>
+  ) => {
+    try {
+      const result = action === 'upsert'
+        ? await upsertMasterItem(listKey, payload)
+        : await deleteMasterItem(listKey, payload);
+      
+      stateSetter(result.items as T[]);
+    } catch (err) {
+      console.error(`MasterData Mutation Error [${listKey}]:`, err);
+      throw err;
+    }
+  };
+
   // Part Types
-  const addPartType = useCallback((partType: Omit<PartType, 'id'>) => {
-    setPartTypes(prev => [...prev, { ...partType, id: generateId() }]);
+  const addPartType = useCallback(async (partType: Omit<PartType, 'id'>) => {
+    await runMutation('part_types', 'upsert', { ...partType, id: generateId() }, setPartTypes);
   }, []);
-
-  const updatePartType = useCallback((id: string, partType: Partial<PartType>) => {
-    setPartTypes(prev => prev.map(pt => pt.id === id ? { ...pt, ...partType } : pt));
-  }, []);
-
-  const deletePartType = useCallback((id: string) => {
-    setPartTypes(prev => prev.filter(pt => pt.id !== id));
+  const updatePartType = useCallback(async (id: string, partType: Partial<PartType>) => {
+    const existing = partTypes.find(p => p.id === id);
+    if (existing) {
+      await runMutation('part_types', 'upsert', { ...existing, ...partType }, setPartTypes);
+    }
+  }, [partTypes]);
+  const deletePartType = useCallback(async (id: string) => {
+    await runMutation('part_types', 'delete', id, setPartTypes);
   }, []);
 
   // Customers
-  const addCustomer = useCallback((customer: Omit<Customer, 'id'>) => {
-    setCustomers(prev => [...prev, { ...customer, id: generateId() }]);
+  const addCustomer = useCallback(async (customer: Omit<Customer, 'id'>) => {
+    await runMutation('customers', 'upsert', { ...customer, id: generateId() }, setCustomers);
   }, []);
-
-  const updateCustomer = useCallback((id: string, customer: Partial<Customer>) => {
-    setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...customer } : c));
-  }, []);
-
-  const deleteCustomer = useCallback((id: string) => {
-    setCustomers(prev => prev.filter(c => c.id !== id));
+  const updateCustomer = useCallback(async (id: string, customer: Partial<Customer>) => {
+    const existing = customers.find(c => c.id === id);
+    if (existing) {
+      await runMutation('customers', 'upsert', { ...existing, ...customer }, setCustomers);
+    }
+  }, [customers]);
+  const deleteCustomer = useCallback(async (id: string) => {
+    await runMutation('customers', 'delete', id, setCustomers);
   }, []);
 
   // Suppliers
-  const addSupplier = useCallback((supplier: Omit<Supplier, 'id'>) => {
-    setSuppliers(prev => [...prev, { ...supplier, id: generateId() }]);
+  const addSupplier = useCallback(async (supplier: Omit<Supplier, 'id'>) => {
+    await runMutation('suppliers', 'upsert', { ...supplier, id: generateId() }, setSuppliers);
   }, []);
-
-  const updateSupplier = useCallback((id: string, supplier: Partial<Supplier>) => {
-    setSuppliers(prev => prev.map(s => s.id === id ? { ...s, ...supplier } : s));
-  }, []);
-
-  const deleteSupplier = useCallback((id: string) => {
-    setSuppliers(prev => prev.filter(s => s.id !== id));
+  const updateSupplier = useCallback(async (id: string, supplier: Partial<Supplier>) => {
+    const existing = suppliers.find(s => s.id === id);
+    if (existing) {
+      await runMutation('suppliers', 'upsert', { ...existing, ...supplier }, setSuppliers);
+    }
+  }, [suppliers]);
+  const deleteSupplier = useCallback(async (id: string) => {
+    await runMutation('suppliers', 'delete', id, setSuppliers);
   }, []);
 
   // Machines
-  const addMachine = useCallback((machine: Omit<Machine, 'id'>) => {
-    setMachines(prev => [...prev, { ...machine, id: generateId() }]);
+  const addMachine = useCallback(async (machine: Omit<Machine, 'id'>) => {
+    await runMutation('machines', 'upsert', { ...machine, id: generateId() }, setMachines);
   }, []);
-
-  const updateMachine = useCallback((id: string, machine: Partial<Machine>) => {
-    setMachines(prev => prev.map(m => m.id === id ? { ...m, ...machine } : m));
-  }, []);
-
-  const deleteMachine = useCallback((id: string) => {
-    setMachines(prev => prev.filter(m => m.id !== id));
+  const updateMachine = useCallback(async (id: string, machine: Partial<Machine>) => {
+    const existing = machines.find(m => m.id === id);
+    if (existing) {
+      await runMutation('machines', 'upsert', { ...existing, ...machine }, setMachines);
+    }
+  }, [machines]);
+  const deleteMachine = useCallback(async (id: string) => {
+    await runMutation('machines', 'delete', id, setMachines);
   }, []);
 
   // Departments
-  const addDepartment = useCallback((department: Omit<Department, 'id'>) => {
-    setDepartments(prev => [...prev, { ...department, id: generateId() }]);
+  const addDepartment = useCallback(async (department: Omit<Department, 'id'>) => {
+    await runMutation('departments', 'upsert', { ...department, id: generateId() }, setDepartments);
   }, []);
-
-  const updateDepartment = useCallback((id: string, department: Partial<Department>) => {
-    setDepartments(prev => prev.map(d => d.id === id ? { ...d, ...department } : d));
-  }, []);
-
-  const deleteDepartment = useCallback((id: string) => {
-    setDepartments(prev => prev.filter(d => d.id !== id));
+  const updateDepartment = useCallback(async (id: string, department: Partial<Department>) => {
+    const existing = departments.find(d => d.id === id);
+    if (existing) {
+      await runMutation('departments', 'upsert', { ...existing, ...department }, setDepartments);
+    }
+  }, [departments]);
+  const deleteDepartment = useCallback(async (id: string) => {
+    await runMutation('departments', 'delete', id, setDepartments);
   }, []);
 
   return (
     <MasterDataContext.Provider value={{
-      partTypes,
-      customers,
-      suppliers,
-      machines,
-      departments,
-      addPartType,
-      updatePartType,
-      deletePartType,
-      addCustomer,
-      updateCustomer,
-      deleteCustomer,
-      addSupplier,
-      updateSupplier,
-      deleteSupplier,
-      addMachine,
-      updateMachine,
-      deleteMachine,
-      addDepartment,
-      updateDepartment,
-      deleteDepartment,
+      partTypes, customers, suppliers, machines, departments, isLoading,
+      addPartType, updatePartType, deletePartType,
+      addCustomer, updateCustomer, deleteCustomer,
+      addSupplier, updateSupplier, deleteSupplier,
+      addMachine, updateMachine, deleteMachine,
+      addDepartment, updateDepartment, deleteDepartment,
     }}>
       {children}
     </MasterDataContext.Provider>

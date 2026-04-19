@@ -1,957 +1,25 @@
-import { useMemo } from 'react';
+﻿import { useState, useEffect, useMemo } from 'react';
+import * as api from '@/lib/api';
+import { toast } from 'sonner';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, Legend,
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ComposedChart, ReferenceLine
 } from 'recharts';
-
 // ─── Types ───────────────────────────────────────────────────────────────────
-interface DailyTrendItem { date: string; [key: string]: any }
-interface AnalyticsField {
+export interface DailyTrendItem { date: string; [key: string]: any }
+export interface AnalyticsField {
   field: string; label: string; [key: string]: any;
   daily_trend: DailyTrendItem[];
 }
-interface AnalyticsData {
+export interface AnalyticsData {
   month: string; report_count: number; analytics: AnalyticsField[];
 }
 
-// ─── Sample data (replace with props/context) ────────────────────────────────
-const RAW: AnalyticsData =  {
-        "month": "2025-04",
-        "report_count": 4,
-        "analytics": [
-            {
-                "field": "f01_accident",
-                "label": "Accident / Incident / Near Miss",
-                "total_incidents": 1,
-                "by_machine": [],
-                "by_type": [
-                    {
-                        "type": "machine",
-                        "count": 1
-                    },
-                    {
-                        "type": "others",
-                        "count": 0
-                    }
-                ],
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "count": 1
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "count": 0
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "count": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "count": 0
-                    }
-                ]
-            },
-            {
-                "field": "f02_customer_rejection",
-                "label": "Customer Rejection",
-                "target_ppm": 50,
-                "by_customer": [
-                    {
-                        "customer": "TML",
-                        "total_ppm": 130
-                    }
-                ],
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "total_ppm": 65
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "total_ppm": 65
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "total_ppm": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "total_ppm": 0
-                    }
-                ]
-            },
-            {
-                "field": "f03_production",
-                "label": "Production",
-                "by_part_type": [
-                    {
-                        "part_type": "Front",
-                        "target": 510,
-                        "actual": 490
-                    },
-                    {
-                        "part_type": "Rear",
-                        "target": 430,
-                        "actual": 413
-                    },
-                    {
-                        "part_type": "I/A",
-                        "target": 230,
-                        "actual": 215
-                    }
-                ],
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "target": 270,
-                        "actual": 263
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "target": 300,
-                        "actual": 285
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "target": 300,
-                        "actual": 285
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "target": 300,
-                        "actual": 285
-                    }
-                ],
-                "cumulative_target": 1170,
-                "cumulative_actual": 1118
-            },
-            {
-                "field": "f04_cycle_time",
-                "label": "Cycle Time",
-                "target_minutes": 2,
-                "avg_front": 2.2,
-                "avg_rear": 2.5,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "front": 2.2,
-                        "rear": 2.5,
-                        "avg": 2.35,
-                        "target": 2
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "front": 2.2,
-                        "rear": 2.5,
-                        "avg": 2.35,
-                        "target": 2
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "front": null,
-                        "rear": null,
-                        "avg": null
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "front": null,
-                        "rear": null,
-                        "avg": null
-                    }
-                ]
-            },
-            {
-                "field": "f05_per_man_per_day",
-                "label": "Per Man Per Day Prop Shaft Qty",
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "target": 0,
-                        "actual": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "target": 100,
-                        "actual": 90
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "target": 0,
-                        "actual": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "target": 0,
-                        "actual": 0
-                    }
-                ],
-                "avg_actual": 22.5
-            },
-            {
-                "field": "f06_ot_hours_last_day",
-                "label": "OT Hours Last Day",
-                "by_department": [
-                    {
-                        "department": "WELDING",
-                        "total_hours": 9
-                    },
-                    {
-                        "department": "ASSEMBLY",
-                        "total_hours": 6.5
-                    }
-                ],
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "total_ot": 5
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "total_ot": 3.5
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "total_ot": 3.5
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "total_ot": 3.5
-                    }
-                ],
-                "total_ot_hours": 15.5
-            },
-            {
-                "field": "f07_ot_hours_cumulative",
-                "label": "Cumulative OT Hours",
-                "current_cumulative": 10.5,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "cumulative": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "cumulative": 3.5
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "cumulative": 7
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "cumulative": 10.5
-                    }
-                ]
-            },
-            {
-                "field": "f08_dispatch",
-                "label": "Dispatch",
-                "by_customer": [
-                    {
-                        "customer": "TML",
-                        "front": 0,
-                        "rear": 0,
-                        "ia": 0
-                    },
-                    {
-                        "customer": "ALW",
-                        "front": 0,
-                        "rear": 0,
-                        "ia": 0
-                    }
-                ],
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "total_front": 0,
-                        "total_rear": 0,
-                        "total_ia": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "total_front": 0,
-                        "total_rear": 0,
-                        "total_ia": 0
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "total_front": 0,
-                        "total_rear": 0,
-                        "total_ia": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "total_front": 0,
-                        "total_rear": 0,
-                        "total_ia": 0
-                    }
-                ],
-                "totals": {
-                    "front": 0,
-                    "rear": 0,
-                    "ia": 0
-                }
-            },
-            {
-                "field": "f09_prod_plan_adherence",
-                "label": "Production Plan Adherence %",
-                "avg_actual": 90,
-                "below_target_days": 1,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "target": 95,
-                        "actual": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "target": 95,
-                        "actual": 90
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "target": 95,
-                        "actual": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "target": 95,
-                        "actual": 0
-                    }
-                ]
-            },
-            {
-                "field": "f10_otif_adherence",
-                "label": "OTIF Schedule Adherence %",
-                "avg_actual": 94.25,
-                "missed_days": 4,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "target": 100,
-                        "actual": 92
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "target": 100,
-                        "actual": 95
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "target": 100,
-                        "actual": 95
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "target": 100,
-                        "actual": 95
-                    }
-                ]
-            },
-            {
-                "field": "f11_prod_hours_loss",
-                "label": "Production Hours Loss (Material Shortage)",
-                "total_hours_lost": 5,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "actual_hours": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "actual_hours": 5
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "actual_hours": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "actual_hours": 0
-                    }
-                ]
-            },
-            {
-                "field": "f12_line_quality_issue",
-                "label": "Line Quality Issue",
-                "total_issues": 3,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "actual": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "actual": 3
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "actual": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "actual": 0
-                    }
-                ]
-            },
-            {
-                "field": "f13_poor_incoming_material",
-                "label": "Poor Incoming Material",
-                "total_qty": 20,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "quantity": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "quantity": 20
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "quantity": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "quantity": 0
-                    }
-                ]
-            },
-            {
-                "field": "f14_absenteeism",
-                "label": "Unauthorised Absenteeism",
-                "total_absent_person_days": 5,
-                "avg_per_day": 1.25,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "absent_count": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "absent_count": 5
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "absent_count": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "absent_count": 0
-                    }
-                ]
-            },
-            {
-                "field": "f15_machine_breakdown",
-                "label": "Machine Breakdown",
-                "target_minutes": 30,
-                "by_machine": [
-                    {
-                        "machine": "BALANCING FRONT",
-                        "count": 1,
-                        "total_minutes": 45
-                    },
-                    {
-                        "machine": "FINAL ASSY",
-                        "count": 3,
-                        "total_minutes": 60
-                    }
-                ],
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "total_minutes": 45
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "total_minutes": 20
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "total_minutes": 20
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "total_minutes": 20
-                    }
-                ],
-                "total_breakdown_minutes": 105
-            },
-            {
-                "field": "f16_unit_consumption_last_day",
-                "label": "Unit Consumption Last Day (KVAH)",
-                "total_kvah": 500,
-                "avg_daily": 125,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "units_kvah": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "units_kvah": 500
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "units_kvah": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "units_kvah": 0
-                    }
-                ]
-            },
-            {
-                "field": "f17_unit_consumption_ytd",
-                "label": "Unit Consumption Till Date",
-                "current_cumulative_kvah": 15000,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "cumulative_kvah": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "cumulative_kvah": 15000
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "cumulative_kvah": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "cumulative_kvah": 0
-                    }
-                ]
-            },
-            {
-                "field": "f18_diesel_last_day",
-                "label": "Diesel Consumption Last Day (LTR)",
-                "total_ltr": 450,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "quantity_ltr": 120,
-                        "target": 100
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "quantity_ltr": 110,
-                        "target": 100
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "quantity_ltr": 110,
-                        "target": 100
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "quantity_ltr": 110,
-                        "target": 100
-                    }
-                ]
-            },
-            {
-                "field": "f19_diesel_ytd",
-                "label": "Diesel Consumption Till Date",
-                "current_cumulative_ltr": 330,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "cumulative_ltr": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "cumulative_ltr": 110
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "cumulative_ltr": 220
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "cumulative_ltr": 330
-                    }
-                ]
-            },
-            {
-                "field": "f20_power_factor",
-                "label": "Power Factor",
-                "avg_actual": 96,
-                "below_target_days": 1,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "target": 99,
-                        "actual": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "target": 99,
-                        "actual": 96
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "target": 99,
-                        "actual": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "target": 99,
-                        "actual": 0
-                    }
-                ]
-            },
-            {
-                "field": "f21_sales",
-                "label": "Sales Values",
-                "total_month_lakhs": 195,
-                "current_cumulative_lakhs": 710,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "last_day_lakhs": 45,
-                        "cumulative_lakhs": 560
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "last_day_lakhs": 50,
-                        "cumulative_lakhs": 610
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "last_day_lakhs": 50,
-                        "cumulative_lakhs": 660
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "last_day_lakhs": 50,
-                        "cumulative_lakhs": 710
-                    }
-                ]
-            },
-            {
-                "field": "f22_training_last_day",
-                "label": "Training Hours Last Day",
-                "total_training_minutes": 135,
-                "below_target_days": 1,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "training_minutes": 0,
-                        "target": 30,
-                        "topic": ""
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "training_minutes": 45,
-                        "target": 30,
-                        "topic": "Safety Awareness"
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "training_minutes": 45,
-                        "target": 30,
-                        "topic": "Safety Awareness"
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "training_minutes": 45,
-                        "target": 30,
-                        "topic": "Safety Awareness"
-                    }
-                ]
-            },
-            {
-                "field": "f23_training_ytd",
-                "label": "Cumulative Training Hours",
-                "current_cumulative_minutes": 135,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "cumulative_minutes": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "cumulative_minutes": 45
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "cumulative_minutes": 90
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "cumulative_minutes": 135
-                    }
-                ]
-            },
-            {
-                "field": "f24_first_pass_ok",
-                "label": "1st Pass OK Ratio",
-                "avg_actual": 96.75,
-                "below_target_days": 4,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "target": 100,
-                        "actual": 96
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "target": 100,
-                        "actual": 97
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "target": 100,
-                        "actual": 97
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "target": 100,
-                        "actual": 97
-                    }
-                ]
-            },
-            {
-                "field": "f25_first_pass_pdi",
-                "label": "1st Pass OK Ratio PDI",
-                "avg_actual": 97,
-                "below_target_days": 1,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "target": 100,
-                        "actual": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "target": 100,
-                        "actual": 97
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "target": 100,
-                        "actual": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "target": 100,
-                        "actual": 0
-                    }
-                ]
-            },
-            {
-                "field": "f26_supplier_rejection",
-                "label": "Supplier Rejection",
-                "target_ppm": 0,
-                "by_supplier": [
-                    {
-                        "supplier": "ABC Ltd",
-                        "total_qty": 10
-                    }
-                ],
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "total_qty": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "total_qty": 10
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "total_qty": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "total_qty": 0
-                    }
-                ]
-            },
-            {
-                "field": "f27_pdi_issue",
-                "label": "PDI Issue",
-                "total_issues": 3,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "issue_count": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "issue_count": 3
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "issue_count": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "issue_count": 0
-                    }
-                ]
-            },
-            {
-                "field": "f28_field_complaints",
-                "label": "Field Complaints",
-                "total_complaints": 2,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "quantity": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "quantity": 2
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "quantity": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "quantity": 0
-                    }
-                ]
-            },
-            {
-                "field": "f29_sop_non_adherence",
-                "label": "SOP Non-adherence (LPA Audit)",
-                "total_days_with_issues": 1,
-                "total_issues": 1,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "found": 0,
-                        "description_count": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "found": 1,
-                        "description_count": 1
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "found": 0,
-                        "description_count": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "found": 0,
-                        "description_count": 0
-                    }
-                ]
-            },
-            {
-                "field": "f30_fixture_issue",
-                "label": "Line Issue / Stop Due to Fixtures",
-                "total_days_with_issues": 2,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "has_issue": 1
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "has_issue": 1
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "has_issue": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "has_issue": 0
-                    }
-                ]
-            },
-            {
-                "field": "f31_pallet_trolley_issue",
-                "label": "Pallet / Trolley Issue",
-                "total_days_with_issues": 1,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "has_issue": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "has_issue": 1
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "has_issue": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "has_issue": 0
-                    }
-                ]
-            },
-            {
-                "field": "f32_material_shortage",
-                "label": "Material Shortage Issue",
-                "total_days_with_shortage": 1,
-                "total_descriptions": 1,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "has_issue": 0,
-                        "desc_count": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "has_issue": 1,
-                        "desc_count": 1
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "has_issue": 0,
-                        "desc_count": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "has_issue": 0,
-                        "desc_count": 0
-                    }
-                ]
-            },
-            {
-                "field": "f33_other_critical_issue",
-                "label": "Other Critical Issue",
-                "total_days_with_issues": 1,
-                "total_descriptions": 1,
-                "daily_trend": [
-                    {
-                        "date": "2025-04-15T00:00:00.000Z",
-                        "has_issue": 0,
-                        "desc_count": 0
-                    },
-                    {
-                        "date": "2025-04-16T00:00:00.000Z",
-                        "has_issue": 1,
-                        "desc_count": 1
-                    },
-                    {
-                        "date": "2025-04-17T00:00:00.000Z",
-                        "has_issue": 0,
-                        "desc_count": 0
-                    },
-                    {
-                        "date": "2025-04-18T00:00:00.000Z",
-                        "has_issue": 0,
-                        "desc_count": 0
-                    }
-                ]
-            }
-        ]
-    }
+import { useMasterData } from '@/context/MasterDataContext';
+
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const G = {
   gold: '#C9A962', dark: '#1A1A1A', gray: '#666666', light: '#E5E5E5',
@@ -1009,90 +77,157 @@ function ChartWrap({ h = 220, children }: { h?: number; children: React.ReactNod
 }
 
 // ─── Main Analytics Component ────────────────────────────────────────────────
-export default function Analytics({ data = RAW }: { data?: AnalyticsData }) {
-  const get = (field: string) => data.analytics.find(a => a.field === field)!;
+export default function Analytics() {
+  // const [selectedMonth, setSelectedMonth] = useState(
+  //   () => new Date().toISOString().slice(0, 7)
+  // );
+  const selectedMonth=new Date().toISOString().slice(0, 7);
+  const [data, setData] = useState<AnalyticsData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true);
+      try {
+        const response = await api.getMonthlyAnalytics(selectedMonth);
+        console.log("response",response);
+        setData(response as AnalyticsData);
+      } catch (err) {
+        toast.error('Failed to load analytics data');
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, [selectedMonth]);
+
+  useEffect(()=>{
+    console.log("data",data);
+    console.log("setloading",loading);
+  },[data,loading]);
+
+  if (loading || !data) return <div className="p-10 text-center text-[#999]">Loading analytics...</div>;
+
+  return <AnalyticsContent data={data} />;
+}
+
+function AnalyticsContent({ data }: { data: AnalyticsData }) {
+  const get = (field: string) => data.analytics.find(a => a.field === field) || { 
+    daily_trend: [], by_part_type: [], by_department: [], by_machine: [], 
+    by_customer: [], by_supplier: [], by_type: [],
+    // Add common fallback numeric properties to avoid 'undefined' math
+    cumulative_target: 0, cumulative_actual: 0, total_incidents: 0, 
+    avg_actual: 0, total_ot_hours: 0, current_cumulative: 0,
+    total_absent_person_days: 0, total_breakdown_minutes: 0, total_qty: 0,
+    current_cumulative_lakhs: 0, total_hours_lost: 0, total_issues: 0,
+    total_complaints: 0, total_days_with_issues: 0, total_days_with_shortage: 0,
+    total_kvah: 0, current_cumulative_kvah: 0, total_ltr: 0, current_cumulative_ltr: 0
+  } as any;
+
+  const { partTypes } = useMasterData();
 
   // ── processed data ──────────────────────────────────────────────────────
-  const prodDays = useMemo(() => get('f03_production').daily_trend.map(d => ({
+  const prodDays = useMemo(() => get('f03_production').daily_trend.map((d: any) => ({
     date: fmtDate(d.date), target: d.target, actual: d.actual,
     eff: d.target ? +((d.actual / d.target) * 100).toFixed(1) : 0,
-  })), []);
+  })), [data]);
 
   const ctDays = useMemo(() => get('f04_cycle_time').daily_trend
-    .filter(d => d.avg != null)
-    .map(d => ({ date: fmtDate(d.date), front: d.front, rear: d.rear, avg: d.avg, target: d.target })), []);
+    .filter((d: any) => d.avg != null)
+    .map((d: any) => ({ date: fmtDate(d.date), front: d.front, rear: d.rear, avg: d.avg, target: d.target })), [data]);
 
-  const partPie = useMemo(() => get('f03_production').by_part_type.map((p: any) => ({
-    name: p.part_type, value: p.actual, target: p.target,
-  })), []);
+  const partPie = useMemo(() => (get('f03_production').by_part_type || []).map((p: any) => ({
+    name: partTypes[parseInt(p.partTypeId)]?.name || `Part ${p.partTypeId}`,
+    value: p.actual,
+    target: p.target,
+  })), [data, partTypes]);
 
   const custRejDays = useMemo(() => get('f02_customer_rejection').daily_trend.map((d: any) => ({
     date: fmtDate(d.date), ppm: d.total_ppm, target: get('f02_customer_rejection').target_ppm,
-  })), []);
+  })), [data]);
 
   const planAdh = useMemo(() => get('f09_prod_plan_adherence').daily_trend.map((d: any) => ({
     date: fmtDate(d.date), actual: d.actual, target: d.target,
-  })), []);
+  })), [data]);
 
   const otif = useMemo(() => get('f10_otif_adherence').daily_trend.map((d: any) => ({
     date: fmtDate(d.date), actual: d.actual, target: d.target,
-  })), []);
+  })), [data]);
 
   const otDays = useMemo(() => get('f06_ot_hours_last_day').daily_trend.map((d: any) => ({
     date: fmtDate(d.date), ot: d.total_ot,
-  })), []);
+  })), [data]);
 
-  const otByDept = useMemo(() => get('f06_ot_hours_last_day').by_department.map((d: any) => ({
+  const otByDept = useMemo(() => (get('f06_ot_hours_last_day').by_department || []).map((d: any) => ({
     name: d.department, hours: d.total_hours,
-  })), []);
+  })), [data]);
 
   const otCum = useMemo(() => get('f07_ot_hours_cumulative').daily_trend.map((d: any) => ({
     date: fmtDate(d.date), cumulative: d.cumulative,
-  })), []);
+  })), [data]);
 
-  const machBreakdownByMachine = useMemo(() => get('f15_machine_breakdown').by_machine.map((m: any) => ({
+  const machBreakdownByMachine = useMemo(() => (get('f15_machine_breakdown').by_machine || []).map((m: any) => ({
     name: m.machine, minutes: m.total_minutes, count: m.count,
-  })), []);
+  })), [data]);
 
   const machDays = useMemo(() => get('f15_machine_breakdown').daily_trend.map((d: any) => ({
     date: fmtDate(d.date), minutes: d.total_minutes, target: get('f15_machine_breakdown').target_minutes,
-  })), []);
+  })), [data]);
 
-  const dieselDays = useMemo(() => get('f18_diesel_last_day').daily_trend.map((d: any) => ({
-    date: fmtDate(d.date), actual: d.quantity_ltr, target: d.target,
-  })), []);
+  const dieselDays = useMemo(() => {
+    // Backend consolidated diesel (f18) into f16
+    const f16 = get('f16_unit_consumption_last_day');
+    return f16.daily_trend.map((d: any) => ({
+      date: fmtDate(d.date), actual: d.quantity_ltr || 0, target: d.target_diesel || 100,
+    }));
+  }, [data]);
 
-  const dieselCum = useMemo(() => get('f19_diesel_ytd').daily_trend.map((d: any) => ({
-    date: fmtDate(d.date), ltr: d.cumulative_ltr,
-  })), []);
+  const dieselCum = useMemo(() => {
+    // f19 consolidated into f16
+    const f16 = get('f16_unit_consumption_last_day');
+    return f16.daily_trend.map((d: any) => ({
+      date: fmtDate(d.date), ltr: d.cumulative_ltr || 0,
+    }));
+  }, [data]);
 
   const salesDays = useMemo(() => get('f21_sales').daily_trend.map((d: any) => ({
     date: fmtDate(d.date), daily: d.last_day_lakhs, cumulative: d.cumulative_lakhs,
-  })), []);
+  })), [data]);
 
   const trainingDays = useMemo(() => get('f22_training_last_day').daily_trend.map((d: any) => ({
-    date: fmtDate(d.date), actual: d.training_minutes, target: d.target,
-  })), []);
+    date: fmtDate(d.date), actual: d.training_minutes || (d.training_hours * 60) || 0, target: d.target || 30,
+  })), [data]);
 
-  const trainingCum = useMemo(() => get('f23_training_ytd').daily_trend.map((d: any) => ({
-    date: fmtDate(d.date), minutes: d.cumulative_minutes,
-  })), []);
+  const trainingCum = useMemo(() => {
+    // training ytd consolidated into training_last_day
+    const f22 = get('f22_training_last_day');
+    return f22.daily_trend.map((d: any) => ({
+      date: fmtDate(d.date), minutes: d.cumulative_minutes || (d.cumulative_hours * 60) || 0,
+    }));
+  }, [data]);
 
   const fpass = useMemo(() => get('f24_first_pass_ok').daily_trend.map((d: any) => ({
-    date: fmtDate(d.date), actual: d.actual, target: d.target,
-  })), []);
+    date: fmtDate(d.date), actual: d.actual || d.first_pass_ok_percentage || 0, target: d.target || 100,
+  })), [data]);
 
-  const pdiRatio = useMemo(() => get('f25_first_pass_pdi').daily_trend
-    .filter(d => d.actual > 0)
-    .map((d: any) => ({ date: fmtDate(d.date), actual: d.actual, target: d.target })), []);
+  const pdiRatio = useMemo(() => {
+    const f24 = get('f24_first_pass_ok');
+    return f24.daily_trend
+      .filter((d: any) => (d.pdi_ratio || d.actual) > 0)
+      .map((d: any) => ({ date: fmtDate(d.date), actual: d.pdi_ratio || d.actual, target: d.target || 100 }));
+  }, [data]);
 
-  const qualityRadar = useMemo(() => [
-    { metric: 'First Pass OK', value: get('f24_first_pass_ok').avg_actual },
-    { metric: 'PDI Ratio', value: get('f25_first_pass_pdi').avg_actual },
-    { metric: 'OTIF', value: get('f10_otif_adherence').avg_actual },
-    { metric: 'Plan Adh.', value: get('f09_prod_plan_adherence').avg_actual },
-    { metric: 'Power Factor', value: get('f20_power_factor').avg_actual },
-  ], []);
+  const qualityRadar = useMemo(() => {
+    const f24 = get('f24_first_pass_ok');
+    return [
+      { metric: 'First Pass OK', value: f24.avg_first_pass || f24.avg_actual || 0 },
+      { metric: 'PDI Ratio', value: f24.avg_pdi || 0 },
+      { metric: 'OTIF', value: get('f10_otif_adherence').avg_actual || 0 },
+      { metric: 'Plan Adh.', value: get('f09_prod_plan_adherence').avg_actual || 0 },
+      { metric: 'Power Factor', value: get('f16_unit_consumption_last_day').avg_power_factor || 0 },
+    ];
+  }, [data]);
 
   const issuesTrend = useMemo(() => {
     const dates = get('f12_line_quality_issue').daily_trend.map((d: any) => fmtDate(d.date));
@@ -1106,7 +241,7 @@ export default function Analytics({ data = RAW }: { data?: AnalyticsData }) {
       materialShortage: get('f32_material_shortage').daily_trend[i].has_issue,
       otherCritical: get('f33_other_critical_issue').daily_trend[i].has_issue,
     }));
-  }, []);
+  }, [data]);
 
   const issuesPie = useMemo(() => [
     { name: 'Line Quality', value: get('f12_line_quality_issue').total_issues },
@@ -1115,47 +250,54 @@ export default function Analytics({ data = RAW }: { data?: AnalyticsData }) {
     { name: 'Fixture Issues', value: get('f30_fixture_issue').total_days_with_issues },
     { name: 'Material Shortage', value: get('f32_material_shortage').total_days_with_shortage },
     { name: 'SOP Non-adh.', value: get('f29_sop_non_adherence').total_issues },
-  ].filter(d => d.value > 0), []);
+  ].filter(d => d.value > 0), [data]);
 
   const supplierRejDays = useMemo(() => get('f26_supplier_rejection').daily_trend.map((d: any) => ({
     date: fmtDate(d.date), qty: d.total_qty,
-  })), []);
+  })), [data]);
 
   const absenceeDays = useMemo(() => get('f14_absenteeism').daily_trend.map((d: any) => ({
     date: fmtDate(d.date), absent: d.absent_count,
-  })), []);
+  })), [data]);
 
   const incomingMatDays = useMemo(() => get('f13_poor_incoming_material').daily_trend.map((d: any) => ({
     date: fmtDate(d.date), qty: d.quantity,
-  })), []);
+  })), [data]);
 
   const perManDays = useMemo(() => get('f05_per_man_per_day').daily_trend
     .filter((d: any) => d.target > 0)
-    .map((d: any) => ({ date: fmtDate(d.date), actual: d.actual, target: d.target })), []);
+    .map((d: any) => ({ date: fmtDate(d.date), actual: d.actual, target: d.target })), [data]);
 
   const dispatchDays = useMemo(() => get('f08_dispatch').daily_trend.map((d: any) => ({
     date: fmtDate(d.date), front: d.total_front, rear: d.total_rear, ia: d.total_ia,
-  })), []);
+  })), [data]);
 
-  const powerFactorDays = useMemo(() => get('f20_power_factor').daily_trend
-    .filter((d: any) => d.actual > 0)
-    .map((d: any) => ({ date: fmtDate(d.date), actual: d.actual, target: d.target })), []);
+  const powerFactorDays = useMemo(() => {
+    // f20 consolidated into f16
+    const f16 = get('f16_unit_consumption_last_day');
+    return f16.daily_trend
+      .filter((d: any) => (d.power_factor || d.actual) > 0)
+      .map((d: any) => ({ date: fmtDate(d.date), actual: d.power_factor || d.actual, target: d.target || 99 }));
+  }, [data]);
 
   const prodHoursLoss = useMemo(() => get('f11_prod_hours_loss').daily_trend.map((d: any) => ({
     date: fmtDate(d.date), hours: d.actual_hours,
-  })), []);
+  })), [data]);
 
   const kvahDays = useMemo(() => get('f16_unit_consumption_last_day').daily_trend
-    .filter((d: any) => d.units_kvah > 0)
-    .map((d: any) => ({ date: fmtDate(d.date), kvah: d.units_kvah })), []);
+    .filter((d: any) => (d.units_kvah || d.kvah) > 0)
+    .map((d: any) => ({ date: fmtDate(d.date), kvah: d.units_kvah || d.kvah })), [data]);
 
   const accByType = useMemo(() => get('f01_accident').by_type.map((t: any) => ({
     name: t.type, value: t.count,
-  })).filter((t: any) => t.value > 0), []);
+  })).filter((t: any) => t.value > 0), [data]);
 
   // top-line KPIs
   const prod = get('f03_production');
   const prodEff = +((prod.cumulative_actual / prod.cumulative_target) * 100).toFixed(1);
+  // const f1 = get('f01_accident');
+
+
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
@@ -1170,9 +312,9 @@ export default function Analytics({ data = RAW }: { data?: AnalyticsData }) {
         <div className="flex gap-2">
           {[
             { label: 'Production Eff.', value: `${prodEff}%`, color: prodEff >= 95 ? G.green : G.amber },
-            { label: 'OTIF Avg', value: `${get('f10_otif_adherence').avg_actual}%`, color: G.blue },
-            { label: 'Incidents', value: get('f01_accident').total_incidents, color: G.red },
-            { label: 'Total Sales', value: `₹${get('f21_sales').current_cumulative_lakhs}L`, color: G.gold },
+            { label: 'OTIF Avg', value: `${get('f10_otif_adherence').avg_actual || 0}%`, color: G.blue },
+            { label: 'Incidents', value: get('f01_accident').total_incidents || 0, color: G.red },
+            { label: 'Total Sales', value: `₹${get('f21_sales').current_cumulative_lakhs || get('f21_sales').current_cumulative_sales || 0}L`, color: G.gold },
           ].map(k => (
             <div key={k.label} className="bg-white rounded-xl px-4 py-3 shadow-sm border border-[#F0F0F0] text-center min-w-[90px]">
               <div className="text-xl font-bold" style={{ color: k.color }}>{k.value}</div>
@@ -1290,10 +432,10 @@ export default function Analytics({ data = RAW }: { data?: AnalyticsData }) {
         <SectionHeader title="Quality" sub="Rejections, first-pass ratios & PDI" />
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-          <KpiPill label="Customer Rej. (TML PPM)" value={get('f02_customer_rejection').by_customer[0]?.total_ppm ?? 0} color={G.red} />
-          <KpiPill label="1st Pass OK Avg %" value={`${get('f24_first_pass_ok').avg_actual}%`} color={G.green} />
-          <KpiPill label="PDI Ratio Avg %" value={`${get('f25_first_pass_pdi').avg_actual}%`} color={G.teal} />
-          <KpiPill label="Supplier Rej. Qty" value={get('f26_supplier_rejection').by_supplier[0]?.total_qty ?? 0} color={G.amber} />
+          <KpiPill label="Customer Rej. (TML PPM)" value={get('f02_customer_rejection').by_customer?.[0]?.total_ppm ?? 0} color={G.red} />
+          <KpiPill label="1st Pass OK Avg %" value={`${get('f24_first_pass_ok').avg_first_pass || get('f24_first_pass_ok').avg_actual || 0}%`} color={G.green} />
+          <KpiPill label="PDI Ratio Avg %" value={`${get('f24_first_pass_ok').avg_pdi || 0}%`} color={G.teal} />
+          <KpiPill label="Supplier Rej. Qty" value={get('f26_supplier_rejection').by_supplier?.[0]?.total_qty ?? 0} color={G.amber} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

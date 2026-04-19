@@ -81,6 +81,7 @@ export default function MasterData() {
   const [editingItem, setEditingItem] = useState<any>(null);
   const [formData, setFormData] = useState<FormData>(defaultFormData);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const tabs = [
     { id: 'partTypes' as EntityType, label: 'Part Types', icon: Package },
@@ -124,86 +125,100 @@ export default function MasterData() {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this item?')) {
-      switch (activeTab) {
-        case 'partTypes':
-          deletePartType(id);
-          break;
-        case 'customers':
-          deleteCustomer(id);
-          break;
-        case 'suppliers':
-          deleteSupplier(id);
-          break;
-        case 'machines':
-          deleteMachine(id);
-          break;
-        case 'departments':
-          deleteDepartment(id);
-          break;
+      setIsSaving(true);
+      try {
+        switch (activeTab) {
+          case 'partTypes':
+            await deletePartType(id);
+            break;
+          case 'customers':
+            await deleteCustomer(id);
+            break;
+          case 'suppliers':
+            await deleteSupplier(id);
+            break;
+          case 'machines':
+            await deleteMachine(id);
+            break;
+          case 'departments':
+            await deleteDepartment(id);
+            break;
+        }
+        toast.success('Item deleted successfully');
+      } catch (err) {
+        toast.error('Failed to delete item');
+      } finally {
+        setIsSaving(false);
       }
-      toast.success('Item deleted successfully');
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name || !formData.code) {
       toast.error('Name and code are required');
       return;
     }
 
-    const data = {
-      name: formData.name,
-      code: formData.code,
-      description: formData.description,
-      isActive: formData.isActive,
-      ...(activeTab === 'machines' && { department: formData.department }),
-    };
+    setIsSaving(true);
+    try {
+      const data = {
+        name: formData.name,
+        code: formData.code,
+        description: formData.description,
+        isActive: formData.isActive,
+        ...(activeTab === 'machines' && { department: formData.department }),
+      };
 
-    if (editingItem) {
-      switch (activeTab) {
-        case 'partTypes':
-          updatePartType(editingItem.id, data);
-          break;
-        case 'customers':
-          updateCustomer(editingItem.id, data);
-          break;
-        case 'suppliers':
-          updateSupplier(editingItem.id, data);
-          break;
-        case 'machines':
-          updateMachine(editingItem.id, data);
-          break;
-        case 'departments':
-          updateDepartment(editingItem.id, data);
-          break;
+      if (editingItem) {
+        switch (activeTab) {
+          case 'partTypes':
+            await updatePartType(editingItem.id, data);
+            break;
+          case 'customers':
+            await updateCustomer(editingItem.id, data);
+            break;
+          case 'suppliers':
+            await updateSupplier(editingItem.id, data);
+            break;
+          case 'machines':
+            await updateMachine(editingItem.id, data);
+            break;
+          case 'departments':
+            await updateDepartment(editingItem.id, data);
+            break;
+        }
+        toast.success('Item updated successfully');
+      } else {
+        switch (activeTab) {
+          case 'partTypes':
+            await addPartType(data as Omit<PartType, 'id'>);
+            break;
+          case 'customers':
+            await addCustomer(data as Omit<Customer, 'id'>);
+            break;
+          case 'suppliers':
+            await addSupplier(data as Omit<Supplier, 'id'>);
+            break;
+          case 'machines':
+            await addMachine(data as Omit<Machine, 'id'>);
+            break;
+          case 'departments':
+            await addDepartment(data as Omit<Department, 'id'>);
+            break;
+        }
+        toast.success('Item added successfully');
       }
-      toast.success('Item updated successfully');
-    } else {
-      switch (activeTab) {
-        case 'partTypes':
-          addPartType(data as Omit<PartType, 'id'>);
-          break;
-        case 'customers':
-          addCustomer(data as Omit<Customer, 'id'>);
-          break;
-        case 'suppliers':
-          addSupplier(data as Omit<Supplier, 'id'>);
-          break;
-        case 'machines':
-          addMachine(data as Omit<Machine, 'id'>);
-          break;
-        case 'departments':
-          addDepartment(data as Omit<Department, 'id'>);
-          break;
-      }
-      toast.success('Item added successfully');
+
+      setIsDialogOpen(false);
+      setFormData(defaultFormData);
+      setEditingItem(null);
+    } catch (err) {
+      toast.error('Failed to save item');
+    } finally {
+      setIsSaving(false);
     }
-
-    setIsDialogOpen(false);
-    setFormData(defaultFormData);
-    setEditingItem(null);
   };
 
   return (
@@ -397,11 +412,11 @@ export default function MasterData() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSaving}>
               Cancel
             </Button>
-            <Button onClick={handleSave} className="btn-primary">
-              {editingItem ? 'Update' : 'Add'}
+            <Button onClick={handleSave} className="btn-primary" disabled={isSaving}>
+              {isSaving ? 'Saving...' : editingItem ? 'Update' : 'Add'}
             </Button>
           </DialogFooter>
         </DialogContent>
