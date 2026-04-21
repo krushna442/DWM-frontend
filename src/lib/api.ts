@@ -3,7 +3,7 @@
  * Backend base URL: http://localhost:3000/api
  */
 
-import type { DailyEntry, PartType, Customer, Supplier, Machine, Department } from '@/types';
+import type { DailyEntry, PartType, Customer, Supplier, Machine, Department, User } from '@/types';
 
 const BASE = 'http://localhost:3000/api';
 
@@ -17,10 +17,28 @@ async function req<T>(
     method,
     headers: { 'Content-Type': 'application/json' },
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    credentials: 'include', // Important for cookies
   });
   const json = await res.json();
   if (!json.success) throw new Error(json.message || 'API error');
   return json.data as T;
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+/** Login with user_id and password */
+export async function login(user_id: string, password: string): Promise<User> {
+  return req('POST', '/auth/login', { user_id, password });
+}
+
+/** Logout and clear session */
+export async function logout(): Promise<void> {
+  await req('POST', '/auth/logout');
+}
+
+/** Get current authenticated user */
+export async function getMe(): Promise<User> {
+  return req('GET', '/auth/me');
 }
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
@@ -72,6 +90,11 @@ export async function listReports(page = 1, limit = 30): Promise<{
   limit: number;
 }> {
   return req('GET', `/reports?page=${page}&limit=${limit}`);
+}
+
+/** Delete a report by date */
+export async function deleteReport(date: string): Promise<{ deleted: boolean }> {
+  return req('DELETE', `/reports/${date}`);
 }
 
 // ─── Draft ────────────────────────────────────────────────────────────────────

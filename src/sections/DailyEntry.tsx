@@ -93,7 +93,7 @@ function DateSelectionPopup({ onSelect }: { onSelect: (date: string) => void }) 
   const today = new Date().toISOString().split('T')[0];
 
   return (
-    <div className="date-popup-overlay">
+    <div className="w-[20%] mx-auto mt-[100px]">
       <div className="date-popup-card">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
@@ -209,7 +209,7 @@ function SectionRow({ number, title, target, status, onAdd, children, highlight,
     <>
       <div className={`flex items-start gap-0 border-b border-[#E8E8E8] transition-all duration-200 hover:bg-blue-50/10 ${bgClass}`}>
         {/* Number + Title + Target */}
-        <div className="flex w-[200px] shrink-0 items-start gap-2 px-2 py-2.5 bg-[#C9A962] self-stretch">
+        <div className="flex w-[200px] shrink-0 items-start gap-2 px-2 py-2.5 bg-[#00BCD4] self-stretch">
           <div className="flex mt-0.5 items-center gap-0.5 shrink-0">
             <span className="text-[10px] font-bold text-white bg-[#1A1A1A] rounded w-5 h-5 flex items-center justify-center">
               {number}
@@ -224,11 +224,11 @@ function SectionRow({ number, title, target, status, onAdd, children, highlight,
             )}
           </div>
           <div className="flex flex-col min-w-0">
-            <h3 className="text-[10px] font-bold text-[#1A1A1A] leading-tight break-words">
+            <h3 className="text-[10px] font-bold text-gray950 leading-tight break-words">
               {title}
             </h3>
             {target && (
-              <span className="text-[9px] text-[#1A1A1A]/70 font-medium mt-0.5">Target: {target}</span>
+              <span className="text-[9px] text-gray-950/70 font-medium mt-0.5">Target: {target}</span>
             )}
           </div>
         </div>
@@ -409,7 +409,7 @@ interface FieldProps {
 function Field({ label, children, className = "" }: FieldProps) {
   return (
     <div className={`flex flex-col gap-0.5 ${className}`}>
-      <span className="text-[9px] uppercase font-bold text-gray-400 px-0.5 tracking-wider whitespace-nowrap">{label}</span>
+      <span className="text-[9px] uppercase font-bold text-gray-900 px-0.5 tracking-wider whitespace-nowrap">{label}</span>
       {children}
     </div>
   );
@@ -762,7 +762,7 @@ export default function DailyEntry() {
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-[#C9A962] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-gray-500 font-medium">Loading draft...</p>
+          <p className="text-sm text-gray-700 font-medium">Loading draft...</p>
         </div>
       </div>
     );
@@ -792,9 +792,9 @@ export default function DailyEntry() {
           </div>
           <button
             onClick={resetForm}
-            className="text-[10px] text-white/40 hover:text-red-400 transition-colors flex items-center gap-1"
+            className="text-[10px] text-gray-900 hover:text-red-400 transition-colors flex items-center gap-1"
           >
-            <RotateCcw className="w-3 h-3" /> Discard Draft
+            <RotateCcw className="w-3 h-3 " /> Discard Draft
           </button>
         </div>
       )}
@@ -1123,7 +1123,7 @@ export default function DailyEntry() {
                   />
                 </Field>
                 <Field label="Target" className="shrink-0">
-                  <Input value="6" disabled className="h-7 text-[10px] font-bold w-[50px] text-center bg-gray-50" />
+                  <Input value="6" disabled className="h-7 text-[10px] font-bold w-[50px] text-center text-black bg-gray-50" />
                 </Field>
               </div>
             </EntryRow>
@@ -1251,7 +1251,7 @@ export default function DailyEntry() {
             <EntryRow>
               <div className="flex items-end gap-2 flex-wrap">
                 <Field label="Prev Total" className="shrink-0">
-                  <Input value={numVal(formData.cumulativeOT.previousTotal)} disabled className="h-7 text-[10px] font-bold bg-gray-50 w-[70px] text-center" />
+                  <Input value={numVal(formData.cumulativeOT.previousTotal)} disabled className="h-7 text-[10px] font-bold  bg-gray-50 w-[70px] text-center" />
                 </Field>
                 <Field label="Yesterday" className="shrink-0">
                   <Input value={numVal(formData.cumulativeOT.yesterdayOT)} disabled className="h-7 text-[10px] font-bold bg-gray-50 w-[70px] text-center" />
@@ -1268,48 +1268,42 @@ export default function DailyEntry() {
             number={8}
             title="Last Day Dispatch (TML | ALW | PNR)"
             target="—"
-            onAdd={() => setFormData(prev => ({ ...prev, dispatch: [...prev.dispatch, { customerId: '', quantity: 0 }] }))}
             sectionData={formData.dispatch}
             date={selectedDate}
           >
-            {(formData.dispatch.length === 0 ? [{ customerId: '', quantity: 0 }] : formData.dispatch).map((entry, idx) => (
-              <EntryRow key={idx} onRemove={formData.dispatch.length > 0 ? () => {
-                setFormData(prev => ({ ...prev, dispatch: prev.dispatch.filter((_, i) => i !== idx) }));
-              } : undefined}>
-                <div className="flex items-end gap-2 flex-wrap w-full">
-                  <Field label="Customer" className="shrink-0">
-                    <Select value={entry.customerId} onValueChange={(v) => {
-                      const updated = [...formData.dispatch];
-                      const tIdx = formData.dispatch.length === 0 ? 0 : idx;
-                      updated[tIdx] = { ...entry, customerId: v };
-                      setFormData(prev => ({ ...prev, dispatch: updated }));
-                    }}>
-                      <SelectTrigger className="h-7 text-[10px] font-semibold w-[100px]">
-                        <SelectValue placeholder="Select" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {customers.filter(c => c.isActive).map(c => (
-                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Qty" className="shrink-0">
-                    <Input
-                      type="number"
-                      value={numVal(entry.quantity)}
-                      onChange={(e) => {
-                        const updated = [...formData.dispatch];
-                        const tIdx = formData.dispatch.length === 0 ? 0 : idx;
-                        updated[tIdx] = { ...entry, quantity: parseInt(e.target.value) || 0 };
-                        setFormData(prev => ({ ...prev, dispatch: updated }));
-                      }}
-                      className="h-7 text-[10px] font-semibold w-[80px]"
-                    />
-                  </Field>
-                </div>
-              </EntryRow>
-            ))}
+            <div className="flex gap-4">
+              {customers.map((cust) => {
+                const entry = formData.dispatch.find(d => d.customerId === cust.id) || { customerId: cust.id, quantity: 0 };
+                return (
+                  <div key={cust.id} className="flex flex-col border border-[#E5E5E5] rounded overflow-hidden w-[130px] bg-white shadow-sm">
+                    <div className="text-[10px] font-bold text-center py-1.5 bg-gray-50 border-b border-[#E5E5E5] text-[#1A1A1A] uppercase tracking-tighter">
+                      {cust.code}
+                    </div>
+                    <div className="p-1.5">
+                      <Input
+                        type="number"
+                        value={numVal(entry.quantity)}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value) || 0;
+                          setFormData(prev => {
+                            const updated = [...prev.dispatch];
+                            const idx = updated.findIndex(d => d.customerId === cust.id);
+                            if (idx >= 0) {
+                              updated[idx] = { ...updated[idx], quantity: val };
+                            } else {
+                              updated.push({ customerId: cust.id, quantity: val });
+                            }
+                            return { ...prev, dispatch: updated };
+                          });
+                        }}
+                        className="h-8 text-center text-[12px] font-bold border-[#E5E5E5] focus-visible:ring-[#C9A962]"
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </SectionRow>
 
           {/* ══════════ 9. Prod Plan Adherence — auto from production ══════════ */}
@@ -1348,7 +1342,7 @@ export default function DailyEntry() {
                     </Field>
                     {totalProdTarget > 0 && (
                       <div className="flex items-center gap-1 mt-5">
-                        <span className="text-[9px] text-gray-400 italic">Auto from production:</span>
+                        <span className="text-[9px] text-gray-700 italic">Auto from production:</span>
                         <span className="text-[9px] font-bold text-[#C9A962]">
                           {totalProdTarget > 0 ? Math.round((totalProdActual / totalProdTarget) * 100) : 0}%
                         </span>
@@ -1991,7 +1985,7 @@ export default function DailyEntry() {
                 number={23}
                 title="Last Day PDI Issue"
                 target="0"
-                status={data.hasIssue || shouldShowCause ? 'nok' : 'ok'}
+                status={shouldShowCause ? 'nok' : 'ok'}
                 onAdd={() => {
                   trimSupplierRejections();
                   setFormData(prev => ({
@@ -2005,25 +1999,25 @@ export default function DailyEntry() {
                 <EntryRow>
                   <div className="flex items-center gap-2">
                     <Switch
-                      checked={data.hasIssue}
+                      checked={shouldShowCause}
                       onCheckedChange={(v) => {
                         trimSupplierRejections();
                         setFormData(prev => ({ ...prev, pdiIssues: { ...prev.pdiIssues, hasIssue: v } }));
                       }}
                     />
-                    <span className={`text-[9px] font-extrabold ${data.hasIssue ? 'text-red-600' : 'text-emerald-600'}`}>
-                      {data.hasIssue ? 'YES' : 'NO'}
+                    <span className={`text-[9px] font-extrabold ${shouldShowCause ? 'text-red-600' : 'text-emerald-600'}`}>
+                      {shouldShowCause ? 'YES' : 'NO'}
                     </span>
                     {shouldShowCause && (
                       <span className="text-[9px] text-amber-600 italic font-medium">← auto from #22</span>
                     )}
                   </div>
                 </EntryRow>
-                {(data.hasIssue || shouldShowCause) && data.causeActions.length === 0 && (() => {
+                {(shouldShowCause) && data.causeActions.length === 0 && (() => {
                   setFormData(prev => ({ ...prev, pdiIssues: { ...prev.pdiIssues, causeActions: [emptyCauseAction(23)] } }));
                   return null;
                 })()}
-                {(data.hasIssue || shouldShowCause) && data.causeActions.map((ca, caIdx) => (
+                {(shouldShowCause) && data.causeActions.map((ca, caIdx) => (
                   <div key={caIdx} className="mt-1 w-full">
                     <EntryRow onRemove={data.causeActions.length > 1 ? () => setFormData(prev => ({
                       ...prev,
@@ -2072,7 +2066,7 @@ export default function DailyEntry() {
                 <Button 
                   variant="ghost" 
                   size="icon" 
-                  className="h-7 w-7 text-gray-400 hover:text-amber-600 hover:bg-amber-50"
+                  className="h-7 w-7 text-gray-700 hover:text-amber-600 hover:bg-amber-50"
                   onClick={trimSupplierRejections}
                   title="Cleanup empty rows"
                 >

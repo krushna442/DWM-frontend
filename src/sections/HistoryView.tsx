@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Download, Calendar, Search, FileText, RefreshCw, ChevronRight } from 'lucide-react';
+import { Download, Calendar, Search, FileText, RefreshCw, ChevronRight, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
@@ -149,11 +149,8 @@ function PurpleRow({ sl, mp, checkpoint, value, target = '—' }: {
   );
 }
 
-// ─── Excel Export ─────────────────────────────────────────────────────────────
-async function exportToExcel(d: DailyEntry, partTypes: { id: string; name: string }[]) {
-  // @ts-ignore
-  const XLSX = await import('https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs');
-
+// ─── Export Utilities ────────────────────────────────────────────────────────
+function generateExportRows(d: DailyEntry, partTypes: { id: string; name: string }[]) {
   const rows: (string | number)[][] = [
     ['SI', 'Check Points', 'MP', 'Target', 'Actual / Value', 'Probable Causes', 'Action Planned', 'Responsible', 'Target Date'],
   ];
@@ -276,6 +273,14 @@ async function exportToExcel(d: DailyEntry, partTypes: { id: string; name: strin
   if (d.otherField1) addRow(sl++, 'Others / Remarks', '—', '—', d.otherField1, '—', '—', '—', '—');
   if (d.otherField2) addRow(sl++, 'Others / Remarks 2', '—', '—', d.otherField2, '—', '—', '—', '—');
 
+  return rows;
+}
+
+async function exportToExcel(d: DailyEntry, partTypes: { id: string; name: string }[]) {
+  // @ts-ignore
+  const XLSX = await import('https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs');
+  const rows = generateExportRows(d, partTypes);
+
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!cols'] = [
     { wch: 4 }, { wch: 46 }, { wch: 5 }, { wch: 12 },
@@ -286,6 +291,40 @@ async function exportToExcel(d: DailyEntry, partTypes: { id: string; name: strin
   XLSX.writeFile(wb, `Daily_Report_${d.date}.xlsx`);
 }
 
+async function exportToPdf(d: DailyEntry, partTypes: { id: string; name: string }[]) {
+  const { jsPDF } = await import('jspdf');
+  // @ts-ignore
+  const autoTable = (await import('jspdf-autotable')).default;
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const rows = generateExportRows(d, partTypes);
+  const head = rows.slice(0, 1);
+  const body = rows.slice(1);
+
+  doc.setFontSize(14);
+  doc.text(`Daily Report: ${d.date}`, 14, 15);
+
+  autoTable(doc, {
+    head: head,
+    body: body,
+    startY: 20,
+    theme: 'grid',
+    styles: { fontSize: 7, cellPadding: 1, overflow: 'linebreak' },
+    headStyles: { fillColor: [41, 128, 185], textColor: 255, halign: 'center' },
+    columnStyles: {
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 50 },
+      2: { cellWidth: 8, halign: 'center' },
+      3: { cellWidth: 15 },
+      4: { cellWidth: 40 },
+      // Remaining split evenly across causes, actions, targets
+    },
+    margin: { top: 20, left: 10, right: 10, bottom: 10 },
+  });
+
+  doc.save(`Daily_Report_${d.date}.pdf`);
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function HistoryView() {
   const [selectedDate, setSelectedDate] = useState('');
@@ -293,6 +332,7 @@ export default function HistoryView() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const { partTypes } = useMasterData();
 
   useEffect(() => {
@@ -320,12 +360,31 @@ export default function HistoryView() {
     } finally { setLoading(false); }
   }, []);
 
-  const handleExport = async () => {
-    if (!report) return;
-    setExporting(true);
-    try { await exportToExcel(report, partTypes); toast.success('Excel exported!'); }
-    catch { toast.error('Export failed. Please try again.'); }
-    finally { setExporting(false); }
+  // const handleExport = async () => {
+  //   if (!report) return;
+  //   setExporting(true);
+  //   try { await exportToExcel(report, partTypes); toast.success('Excel exported!'); }
+  //   catch { toast.error('Export failed. Please try again.'); }
+  //   finally { setExporting(false); }
+  // };
+
+  const handleDelete = async () => {
+    if (!report || !selectedDate) return;
+    
+    const confirmDelete = window.confirm(`Are you sure you want to delete the record for ${selectedDate}? This action cannot be undone.`);
+    if (!confirmDelete) return;
+
+    setDeleting(true);
+    try {
+      await api.deleteReport(selectedDate);
+      toast.success('Record deleted successfully');
+      setReport(null);
+      setNotFound(true);
+    } catch (err: any) {
+      toast.error(`Delete failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const d = report;
@@ -347,27 +406,45 @@ export default function HistoryView() {
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative flex items-center">
             <Calendar className="w-4 h-4 text-[#999] absolute left-2.5 pointer-events-none" />
-            <Input type="date" value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
-              className="pl-9 h-9 text-sm w-44 border-[#E5E5E5]" />
+            <Input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="pl-9 h-9 text-sm w-44 border-[#E5E5E5]" />
           </div>
-          <Button
-            onClick={() => { if (!selectedDate) { toast.error('Please select a date'); return; } fetchReport(selectedDate); }}
-            disabled={loading || !selectedDate} size="sm"
-            className="h-9 px-4 text-sm font-semibold"
-            style={{ background: '#C9A962', color: '#1A1A1A' }}>
+          <Button onClick={() => { if (!selectedDate) { toast.error('Please select a date'); return; } fetchReport(selectedDate); }} disabled={loading || !selectedDate} size="sm" className="h-9 px-4 text-sm font-semibold" style={{ background: '#C9A962', color: '#1A1A1A' }}>
             {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
             <span className="ml-1.5">{loading ? 'Loading...' : 'View Report'}</span>
           </Button>
           {d && (
-            <Button variant="outline" size="sm"
-              className="h-9 border-[#C9A962] text-[#C9A962] font-semibold"
-              onClick={handleExport} disabled={exporting}>
-              {exporting
-                ? <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                : <Download className="w-3.5 h-3.5 mr-1.5" />}
-              {exporting ? 'Exporting...' : 'Export Excel'}
-            </Button>
+            <>
+              <Button variant="outline" size="sm"
+                className="h-9 border-[#C9A962] text-[#C9A962] font-semibold"
+                onClick={async () => {
+                  setExporting(true);
+                  try { await exportToPdf(report!, partTypes); toast.success('PDF exported!'); }
+                  catch { toast.error('PDF export failed'); }
+                  setExporting(false);
+                }} disabled={exporting || deleting}>
+                {exporting ? <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1.5" />}
+                {exporting ? 'Exporting...' : 'Export PDF'}
+              </Button>
+              <Button variant="outline" size="sm"
+                className="h-9 border-[#C9A962] text-[#C9A962] font-semibold"
+                onClick={async () => {
+                  setExporting(true);
+                  try { await exportToExcel(report!, partTypes); toast.success('Excel exported!'); }
+                  catch { toast.error('Excel export failed'); }
+                  setExporting(false);
+                }} disabled={exporting || deleting}>
+                {exporting ? <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1.5" />}
+                {exporting ? 'Exporting...' : 'Export Excel'}
+              </Button>
+              <Button variant="outline" size="sm"
+                className="h-9 border-red-500 text-red-500 hover:bg-red-50 font-semibold"
+                onClick={handleDelete} disabled={deleting || exporting}>
+                {deleting
+                  ? <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  : <Trash2 className="w-3.5 h-3.5 mr-1.5" />}
+                {deleting ? 'Deleting...' : 'Delete Record'}
+              </Button>
+            </>
           )}
         </div>
       </div>

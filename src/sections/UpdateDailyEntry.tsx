@@ -85,7 +85,7 @@ function DatePickerScreen({
   };
 
   return (
-    <div className="date-popup-overlay">
+    <div className="w-[20%] mx-auto mt-[100px]">
       <div className="date-popup-card">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center"
@@ -230,7 +230,7 @@ function EntryRow({ children, onRemove, className = "" }: EntryRowProps) {
   );
 }
 
-interface FieldProps { label: string; children: React.ReactNode; className?: string; }
+interface FieldProps { label: string; children: React.ReactNode; className?: string; disabled?: boolean; }
 function Field({ label, children, className = "" }: FieldProps) {
   return (
     <div className={`flex flex-col gap-0.5 ${className}`}>
@@ -709,19 +709,19 @@ export default function UpdateDailyEntry() {
               return (
                 <EntryRow key={idx} onRemove={formData.overtime.length > 0 ? () => setFormData(prev => ({ ...prev, overtime: prev.overtime.filter((_, i) => i !== idx) })) : undefined}>
                   <div className="flex items-end gap-2 flex-wrap w-full">
-                    <Field label="Department" className="shrink-0">
-                      <Select value={entry.departmentId} onValueChange={(v) => {
+                    <Field label="Department" className="shrink-0" disabled={true}>
+                      <Select value={entry.departmentId} disabled={true} onValueChange={(v) => {
                         const u = [...formData.overtime]; const ti = formData.overtime.length === 0 ? 0 : idx;
                         u[ti] = { ...entry, departmentId: v, machineId: '' };
                         setFormData(prev => ({ ...prev, overtime: u }));
                       }}>
-                        <SelectTrigger className="h-7 text-[10px] font-semibold w-[110px]"><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectTrigger className="h-7 text-[10px] font-semibold w-[110px] "><SelectValue placeholder="Select" /></SelectTrigger>
                         <SelectContent>{departments.map(d => <SelectItem key={d.id} value={d.id}>{d.code}</SelectItem>)}</SelectContent>
                       </Select>
                     </Field>
                     {isPRD && (
                       <Field label="Machine" className="shrink-0">
-                        <Select value={entry.machineId || ''} onValueChange={(v) => {
+                        <Select  value={entry.machineId || ''}  onValueChange={(v) => {
                           const u = [...formData.overtime]; const ti = formData.overtime.length === 0 ? 0 : idx;
                           u[ti] = { ...entry, machineId: v };
                           setFormData(prev => ({ ...prev, overtime: u }));
@@ -732,7 +732,7 @@ export default function UpdateDailyEntry() {
                       </Field>
                     )}
                     <Field label="Hours" className="shrink-0">
-                      <Input type="number" step="0.5" value={numVal(entry.hours)}
+                      <Input type="number" step="0.5"  disabled={true} value={numVal(entry.hours)}
                         onChange={(e) => {
                           const u = [...formData.overtime]; const ti = formData.overtime.length === 0 ? 0 : idx;
                           u[ti] = { ...entry, hours: parseFloat(e.target.value) || 0 };
@@ -742,7 +742,7 @@ export default function UpdateDailyEntry() {
                     </Field>
                     {hasHours && (
                       <Field label="Reason" className="flex-1 min-w-0">
-                        <Input value={entry.reason} onChange={(e) => {
+                        <Input value={entry.reason} disabled={true} onChange={(e) => {
                           const u = [...formData.overtime]; const ti = formData.overtime.length === 0 ? 0 : idx;
                           u[ti] = { ...entry, reason: e.target.value };
                           setFormData(prev => ({ ...prev, overtime: u }));
@@ -773,33 +773,40 @@ export default function UpdateDailyEntry() {
           </SectionRow>
 
           {/* ══ 8. Dispatch ══ */}
-          <SectionRow number={8} title="Last Day Dispatch (TML | ALW | PNR)" target="—"
-            onAdd={() => setFormData(prev => ({ ...prev, dispatch: [...prev.dispatch, { customerId: '', quantity: 0 }] }))}>
-            {(formData.dispatch.length === 0 ? [{ customerId: '', quantity: 0 }] : formData.dispatch).map((entry, idx) => (
-              <EntryRow key={idx} onRemove={formData.dispatch.length > 0 ? () => setFormData(prev => ({ ...prev, dispatch: prev.dispatch.filter((_, i) => i !== idx) })) : undefined}>
-                <div className="flex items-end gap-2 flex-wrap w-full">
-                  <Field label="Customer" className="shrink-0">
-                    <Select value={entry.customerId} onValueChange={(v) => {
-                      const u = [...formData.dispatch]; const ti = formData.dispatch.length === 0 ? 0 : idx;
-                      u[ti] = { ...entry, customerId: v };
-                      setFormData(prev => ({ ...prev, dispatch: u }));
-                    }}>
-                      <SelectTrigger className="h-7 text-[10px] font-semibold w-[100px]"><SelectValue placeholder="Select" /></SelectTrigger>
-                      <SelectContent>{customers.filter(c => c.isActive).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Qty" className="shrink-0">
-                    <Input type="number" value={numVal(entry.quantity)}
-                      onChange={(e) => {
-                        const u = [...formData.dispatch]; const ti = formData.dispatch.length === 0 ? 0 : idx;
-                        u[ti] = { ...entry, quantity: parseInt(e.target.value) || 0 };
-                        setFormData(prev => ({ ...prev, dispatch: u }));
-                      }}
-                      className="h-7 text-[10px] font-semibold w-[80px]" />
-                  </Field>
-                </div>
-              </EntryRow>
-            ))}
+          <SectionRow number={8} title="Last Day Dispatch (TML | ALW | PNR)" target="—">
+            <div className="flex gap-4">
+              {customers.map((cust) => {
+                const entry = formData.dispatch.find(d => d.customerId === cust.id) || { customerId: cust.id, quantity: 0 };
+                return (
+                  <div key={cust.id} className="flex flex-col border border-[#E5E5E5] rounded overflow-hidden min-w-[120px] bg-white shadow-sm">
+                    <div className="text-[10px] font-bold text-center py-1.5 bg-gray-50 border-b border-[#E5E5E5] text-[#1A1A1A] uppercase tracking-tighter">
+                      {cust.name}
+                    </div>
+                    <div className="p-1.5">
+                      <Input
+                        type="number"
+                        value={numVal(entry.quantity)}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value) || 0;
+                          setFormData(prev => {
+                            const updated = [...prev.dispatch];
+                            const idx = updated.findIndex(d => d.customerId === cust.id);
+                            if (idx >= 0) {
+                              updated[idx] = { ...updated[idx], quantity: val };
+                            } else {
+                              updated.push({ customerId: cust.id, quantity: val });
+                            }
+                            return { ...prev, dispatch: updated };
+                          });
+                        }}
+                        className="h-8 text-center text-[12px] font-bold border-[#E5E5E5] focus-visible:ring-blue-500"
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </SectionRow>
 
           {/* ══ 9. Prod Plan Adherence ══ */}
@@ -1021,7 +1028,7 @@ export default function UpdateDailyEntry() {
                   <Input value={numVal(formData.utilities.cumulativeElectricity)} disabled className="h-7 text-[10px] font-bold bg-gray-100 w-[90px] text-center" />
                 </Field>
                 <Field label="Shift" className="shrink-0">
-                  <Select value={formData.utilities.electricityShift} onValueChange={(v) => setFormData(prev => ({ ...prev, utilities: { ...prev.utilities, electricityShift: v } }))}>
+                  <Select value={formData.utilities.electricityShift} disabled={true} onValueChange={(v) => setFormData(prev => ({ ...prev, utilities: { ...prev.utilities, electricityShift: v } }))}>
                     <SelectTrigger className="h-7 text-[10px] font-semibold w-[70px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="A">A</SelectItem><SelectItem value="AB">AB</SelectItem><SelectItem value="ABC">ABC</SelectItem>
@@ -1029,7 +1036,7 @@ export default function UpdateDailyEntry() {
                   </Select>
                 </Field>
                 <Field label="Reading" className="shrink-0">
-                  <Input type="number" value={numVal(formData.utilities.electricityKVAH)}
+                  <Input type="number" disabled={true} value={numVal(formData.utilities.electricityKVAH)}
                     onChange={(e) => setFormData(prev => ({ ...prev, utilities: { ...prev.utilities, electricityKVAH: parseFloat(e.target.value) || 0 } }))}
                     className="h-7 text-[10px] font-semibold w-[90px]" />
                 </Field>
@@ -1045,17 +1052,17 @@ export default function UpdateDailyEntry() {
                   <Input value={numVal(formData.utilities.cumulativeDiesel)} disabled className="h-7 text-[10px] font-bold bg-gray-100 w-[90px] text-center" />
                 </Field>
                 <Field label="Shift" className="shrink-0">
-                  <Select value={formData.utilities.dieselShift} onValueChange={(v) => setFormData(prev => ({ ...prev, utilities: { ...prev.utilities, dieselShift: v } }))}>
-                    <SelectTrigger className="h-7 text-[10px] font-semibold w-[70px]"><SelectValue /></SelectTrigger>
+                  <Select value={formData.utilities.dieselShift} disabled={true} onValueChange={(v) => setFormData(prev => ({ ...prev, utilities: { ...prev.utilities, dieselShift: v } }))}>
+                    <SelectTrigger className="h-7 text-[10px] font-semibold w-[70px] disabled:opacity-50"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="A">A</SelectItem><SelectItem value="AB">AB</SelectItem><SelectItem value="ABC">ABC</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>
                 <Field label="Reading" className="shrink-0">
-                  <Input type="number" value={numVal(formData.utilities.dieselLTR)}
+                  <Input type="number" disabled={true} value={numVal(formData.utilities.dieselLTR)}
                     onChange={(e) => setFormData(prev => ({ ...prev, utilities: { ...prev.utilities, dieselLTR: parseFloat(e.target.value) || 0 } }))}
-                    className="h-7 text-[10px] font-semibold w-[90px]" />
+                    className="h-7 text-[10px] font-semibold w-[90px] disabled:opacity-50 " />
                 </Field>
               </div>
             </EntryRow>
@@ -1083,9 +1090,9 @@ export default function UpdateDailyEntry() {
             <EntryRow>
               <div className="flex items-end gap-2 flex-wrap">
                 <Field label="Daily (₹L)" className="shrink-0">
-                  <Input type="number" value={numVal(formData.sales.dailySales)}
+                  <Input type="number" disabled={true} value={numVal(formData.sales.dailySales)}
                     onChange={(e) => setFormData(prev => ({ ...prev, sales: { ...prev.sales, dailySales: parseFloat(e.target.value) || 0 } }))}
-                    className="h-7 text-[10px] font-semibold w-[80px]" />
+                    className="h-7 text-[10px] font-semibold w-[80px] disabled:cursor-not-allowed" />
                 </Field>
                 <Field label="Cumulative (₹L)" className="shrink-0">
                   <Input value={numVal(formData.sales.cumulativeSales)} disabled className="h-7 text-[10px] font-bold bg-gray-100 w-[80px] text-center" />
@@ -1098,18 +1105,18 @@ export default function UpdateDailyEntry() {
           <SectionRow number={20} title="Training Hours" target="30 mins" highlight disabled>
             <EntryRow>
               <div className="flex items-end gap-2 flex-wrap">
-                <Field label="Cumulative Hrs" className="shrink-0">
+                <Field label="Cumulative Hrs" className="shrink-0" >
                   <Input value={numVal(formData.training.cumulativeHours)} disabled className="h-7 text-[10px] font-bold bg-gray-100 w-[80px] text-center" />
                 </Field>
                 <Field label="Training Hours" className="shrink-0">
-                  <Input type="number" value={numVal(formData.training.dailyHours)}
+                  <Input type="number" disabled={true} value={numVal(formData.training.dailyHours)}
                     onChange={(e) => setFormData(prev => ({ ...prev, training: { ...prev.training, dailyHours: parseFloat(e.target.value) || 0 } }))}
-                    className="h-7 text-[10px] font-semibold w-[80px]" />
+                    className="h-7 text-[10px] font-semibold w-[80px] disabled:cursor-not-allowed" />
                 </Field>
                 <Field label="Topic" className="flex-1 min-w-0">
-                  <Input value={formData.training.topic}
+                  <Input value={formData.training.topic} disabled={true}
                     onChange={(e) => setFormData(prev => ({ ...prev, training: { ...prev.training, topic: e.target.value } }))}
-                    className="h-7 text-[10px] font-medium w-full" placeholder="Training topic..." />
+                    className="h-7 text-[10px] font-medium w-full disabled:cursor-not-allowed" placeholder="Training topic..." />
                 </Field>
               </div>
             </EntryRow>
@@ -1158,17 +1165,17 @@ export default function UpdateDailyEntry() {
             const shouldShow = formData.qualityRatios.pdiRatio > 0 && formData.qualityRatios.pdiRatio < 100;
             return (
               <SectionRow number={23} title="Last Day PDI Issue" target="0"
-                status={data.hasIssue || shouldShow ? 'nok' : 'ok'}
+                status={ shouldShow ? 'nok' : 'ok'}
                 onAdd={() => { trimSupplierRejections(); setFormData(prev => ({ ...prev, pdiIssues: { ...prev.pdiIssues, causeActions: [...prev.pdiIssues.causeActions, emptyCauseAction(23)] } })); }}>
                 <EntryRow>
                   <div className="flex items-center gap-2">
-                    <Switch checked={data.hasIssue} onCheckedChange={(v) => { trimSupplierRejections(); setFormData(prev => ({ ...prev, pdiIssues: { ...prev.pdiIssues, hasIssue: v } })); }} />
-                    <span className={`text-[9px] font-extrabold ${data.hasIssue ? 'text-red-600' : 'text-emerald-600'}`}>{data.hasIssue ? 'YES' : 'NO'}</span>
+                    <Switch checked={shouldShow} onCheckedChange={(v) => { trimSupplierRejections(); setFormData(prev => ({ ...prev, pdiIssues: { ...prev.pdiIssues, hasIssue: v } })); }} />
+                    <span className={`text-[9px] font-extrabold ${shouldShow? 'text-red-600' : 'text-emerald-600'}`}>{shouldShow? 'YES' : 'NO'}</span>
                     {shouldShow && <span className="text-[9px] text-amber-600 italic font-medium">← auto from #22</span>}
                   </div>
                 </EntryRow>
-                {(data.hasIssue || shouldShow) && data.causeActions.length === 0 && (() => { setFormData(prev => ({ ...prev, pdiIssues: { ...prev.pdiIssues, causeActions: [emptyCauseAction(23)] } })); return null; })()}
-                {(data.hasIssue || shouldShow) && data.causeActions.map((ca, caIdx) => (
+                {( shouldShow)&& data.causeActions.length === 0 && (() => { setFormData(prev => ({ ...prev, pdiIssues: { ...prev.pdiIssues, causeActions: [emptyCauseAction(23)] } })); return null; })()}
+                {( shouldShow) && data.causeActions.map((ca, caIdx) => (
                   <div key={caIdx} className="mt-1 w-full">
                     <EntryRow onRemove={data.causeActions.length > 1 ? () => setFormData(prev => ({ ...prev, pdiIssues: { ...prev.pdiIssues, causeActions: prev.pdiIssues.causeActions.filter((_, i) => i !== caIdx) } })) : undefined}>
                       <CauseActionFields row={ca} onChange={(u) => setFormData(prev => ({ ...prev, pdiIssues: { ...prev.pdiIssues, causeActions: updateCA(prev.pdiIssues.causeActions, caIdx, u) } }))} />
