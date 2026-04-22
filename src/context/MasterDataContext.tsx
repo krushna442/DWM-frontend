@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import type { PartType, Customer, Supplier, Machine, Department } from '@/types';
-import { getMasterData, upsertMasterItem, deleteMasterItem } from '@/lib/api';
+import type { PartType, Customer, Supplier, Machine, Department, DeptOwner } from '@/types';
+import { getMasterData, upsertMasterItem, deleteMasterItem, getDeptOwners, updateDeptOwner as apiUpdateDeptOwner } from '@/lib/api';
 import {
   defaultPartTypes,
   defaultCustomers,
@@ -15,6 +15,7 @@ interface MasterDataContextType {
   suppliers: Supplier[];
   machines: Machine[];
   departments: Department[];
+  deptOwners: DeptOwner[];
   isLoading: boolean;
 
   // Part Types
@@ -41,6 +42,9 @@ interface MasterDataContextType {
   addDepartment: (department: Omit<Department, 'id'>) => Promise<void>;
   updateDepartment: (id: string, department: Partial<Department>) => Promise<void>;
   deleteDepartment: (id: string) => Promise<void>;
+
+  // Dept Owners
+  updateDeptOwner: (sl: number, name: string, email: string) => Promise<void>;
 }
 
 const MasterDataContext = createContext<MasterDataContextType | undefined>(undefined);
@@ -51,6 +55,7 @@ export function MasterDataProvider({ children }: { children: React.ReactNode }) 
   const [suppliers, setSuppliers] = useState<Supplier[]>(defaultSuppliers);
   const [machines, setMachines] = useState<Machine[]>(defaultMachines);
   const [departments, setDepartments] = useState<Department[]>(defaultDepartments);
+  const [deptOwners, setDeptOwners] = useState<DeptOwner[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // ── Fetch from API on mount ────────────────────────────────────────────────
@@ -63,6 +68,10 @@ export function MasterDataProvider({ children }: { children: React.ReactNode }) 
         if (data.suppliers.length)   setSuppliers(data.suppliers);
         if (data.machines.length)    setMachines(data.machines);
         if (data.departments.length) setDepartments(data.departments);
+        
+        // Fetch dept owners separately as they have their own endpoints
+        const owners = await getDeptOwners();
+        if (owners.length) setDeptOwners(owners);
       } catch {
         // Fallback to defaults
       } finally {
@@ -162,14 +171,34 @@ export function MasterDataProvider({ children }: { children: React.ReactNode }) 
     await runMutation('departments', 'delete', id, setDepartments);
   }, []);
 
+  // Dept Owners
+  const updateDeptOwner = useCallback(async (sl: number, name: string, email: string) => {
+    try {
+      const updated = await apiUpdateDeptOwner(sl, name, email);
+      setDeptOwners(prev => {
+        const idx = prev.findIndex(o => o.sl === sl);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = updated;
+          return next;
+        }
+        return [...prev, updated].sort((a, b) => a.sl - b.sl);
+      });
+    } catch (err) {
+      console.error('Failed to update dept owner:', err);
+      throw err;
+    }
+  }, []);
+
   return (
     <MasterDataContext.Provider value={{
-      partTypes, customers, suppliers, machines, departments, isLoading,
+      partTypes, customers, suppliers, machines, departments, deptOwners, isLoading,
       addPartType, updatePartType, deletePartType,
       addCustomer, updateCustomer, deleteCustomer,
       addSupplier, updateSupplier, deleteSupplier,
       addMachine, updateMachine, deleteMachine,
       addDepartment, updateDepartment, deleteDepartment,
+      updateDeptOwner,
     }}>
       {children}
     </MasterDataContext.Provider>

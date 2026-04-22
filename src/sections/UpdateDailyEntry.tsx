@@ -16,6 +16,8 @@ import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { useMasterData } from '@/context/MasterDataContext';
 import { defaultEntry } from '@/context/DailyEntryContext';
+import { useDailyEntry } from '@/context/DailyEntryContext';
+
 import * as api from '@/lib/api';
 import type {
   DailyEntry as DailyEntryType,
@@ -23,47 +25,6 @@ import type {
   SupplierRejection, CauseActionRow,
 } from '@/types';
 
-/* ─────────────────────── OWNERS ARRAY ─────────────────────── */
-const OWNERS: { name: string; email: string }[] = [
-  { name: '', email: '' },
-  { name: 'Ashish', email: 'ashish.tiwari1@rsbglobal.com' },
-  { name: 'Sudhir', email: 'sudhir.sahoo@rsbglobal.com' },
-  { name: 'Brijesh', email: 'brijesh.singh@rsbglobal.com' },
-  { name: 'Brijesh', email: 'brijesh.singh@rsbglobal.com' },
-  { name: 'Brijesh', email: 'brijesh.singh@rsbglobal.com' },
-  { name: 'Brijesh', email: 'brijesh.singh@rsbglobal.com' },
-  { name: 'Brijesh', email: 'brijesh.singh@rsbglobal.com' },
-  { name: 'OM', email: 'om.chand@rsbglobal.com' },
-  { name: 'Rakesh', email: 'rakesh.pal@rsbglobal.com' },
-  { name: 'OM', email: 'om.chand@rsbglobal.com' },
-  { name: 'Dipti', email: 'dipti.das@rsbglobal.com' },
-  { name: 'Dipti', email: 'dipti.das@rsbglobal.com' },
-  { name: 'Sudhir', email: 'sudhir.sahoo@rsbglobal.com' },
-  { name: 'Ashish', email: 'ashish.tiwari1@rsbglobal.com' },
-  { name: 'Avinash', email: 'avinash.choudhary@rsbglobal.com' },
-  { name: 'Avinash', email: 'avinash.choudhary@rsbglobal.com' },
-  { name: 'Avinash', email: 'avinash.choudhary@rsbglobal.com' },
-  { name: 'Avinash', email: 'avinash.choudhary@rsbglobal.com' },
-  { name: 'Avinash', email: 'avinash.choudhary@rsbglobal.com' },
-  { name: 'Abhishek', email: 'abhishek.pal@rsbglobal.com' },
-  { name: 'OM', email: 'om.chand@rsbglobal.com' },
-  { name: 'Ashish', email: 'ashish.tiwari1@rsbglobal.com' },
-  { name: 'Ashish', email: 'ashish.tiwari1@rsbglobal.com' },
-  { name: 'Sudhir', email: 'sudhir.sahoo@rsbglobal.com' },
-  { name: 'Abhishek', email: 'abhishek.pal@rsbglobal.com' },
-  { name: 'Sudhir', email: 'sudhir.sahoo@rsbglobal.com' },
-  { name: 'Sudhir', email: 'sudhir.sahoo@rsbglobal.com' },
-  { name: 'Vikash', email: 'vikas.kumar@rsbglobal.com' },
-  { name: 'Shantanu', email: 'santanu.singh@rsbglobal.com' },
-  { name: 'Nihar', email: 'nihar.khuntia@rsbglobal.com' },
-  { name: 'Rupesh', email: 'Rupesh.pandey@rsbglobal.com' },
-  { name: 'Dipti', email: 'dipti.das@rsbglobal.com' },
-  { name: 'Manager', email: '' },
-];
-const getOwner = (n: number) => OWNERS[n] || { name: '', email: '' };
-const emptyCauseAction = (ownerIdx?: number): CauseActionRow => ({
-  cause: '', action: '', responsible: ownerIdx ? getOwner(ownerIdx).name : '', targetDate: '',
-});
 const clampPct = (v: number) => Math.min(100, Math.max(0, v));
 const numVal = (v: number): string | number => (v === 0 ? '' : v);
 
@@ -89,7 +50,7 @@ function DatePickerScreen({
       <div className="date-popup-card">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-            style={{ background: 'linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%)' }}>
+            style={{ background: 'linear-gradient(135deg, #00BCD4 0%, #00BCD4 100%)' }}>
             <Search className="w-5 h-5 text-white" />
           </div>
           <div>
@@ -123,7 +84,7 @@ function DatePickerScreen({
           onClick={handleFetch}
           className="w-full h-11 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition-all duration-200"
           style={{
-            background: selected ? 'linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%)' : '#E5E5E5',
+            background: selected ? 'linear-gradient(135deg, #00BCD4 0%, #00BCD4 100%)' : '#E5E5E5',
             color: selected ? '#fff' : '#999',
             cursor: selected ? 'pointer' : 'not-allowed',
             boxShadow: selected ? '0 4px 14px rgba(59,130,246,0.35)' : 'none',
@@ -152,18 +113,33 @@ interface SectionRowProps {
 }
 
 function SectionRow({ number, title, target, status, onAdd, children, highlight, disabled, secondNumber }: SectionRowProps) {
-  const ownerName = getOwner(number).name;
-  const ownerEmail = getOwner(number).email;
+  const { deptOwners } = useMasterData();
+  const owner = deptOwners.find(o => o.sl === number) || { name: '', email: '' };
+  const ownerName = owner.name;
+  const ownerEmail = owner.email;
+  const rowColors = [
+    'bg-blue-50',
+    'bg-emerald-50',
+    'bg-violet-50',
+    'bg-amber-50',
+    'bg-fuchsia-50',
+    'bg-cyan-50',
+    'bg-rose-50',
+    'bg-teal-50',
+    'bg-indigo-50',
+    'bg-lime-50'
+  ];
+
   const bgClass = disabled
     ? 'bg-slate-100'
     : highlight
-      ? 'section-row-highlight'
-      : number % 2 === 0 ? 'section-row-even' : 'section-row-odd';
+      ? 'bg-yellow-100'
+      : rowColors[number % rowColors.length];
 
   return (
-    <div className={`flex items-start gap-0 border-b border-[#E8E8E8] transition-all duration-200 ${bgClass} ${disabled ? 'opacity-70' : 'hover:bg-blue-50/10'}`}>
-      <div className={`flex w-[200px] shrink-0 items-start gap-2 px-2 py-2.5 self-stretch ${disabled ? 'bg-slate-400' : 'bg-[#C9A962]'}`}>
-        <div className="flex mt-0.5 items-center gap-0.5 shrink-0">
+    <div className={`flex items-start gap-0 border-b border-white transition-all duration-200 ${bgClass} ${disabled ? 'opacity-70' : 'hover:brightness-95'}`}>
+      <div className={`flex w-[200px] shrink-0 items-start gap-2 px-2 py-2.5 self-stretch ${disabled ? 'bg-slate-400' : 'bg-[#00BCD4]'}`}>
+        <div className="flex mt-0.5 items-center gap-0.5 shrink-0 ">
           <span className="text-[10px] font-bold text-white bg-[#1A1A1A] rounded w-5 h-5 flex items-center justify-center">
             {number}
           </span>
@@ -214,6 +190,7 @@ function SectionRow({ number, title, target, status, onAdd, children, highlight,
   );
 }
 
+
 interface EntryRowProps { children: React.ReactNode; onRemove?: () => void; className?: string; }
 function EntryRow({ children, onRemove, className = "" }: EntryRowProps) {
   return (
@@ -234,7 +211,7 @@ interface FieldProps { label: string; children: React.ReactNode; className?: str
 function Field({ label, children, className = "" }: FieldProps) {
   return (
     <div className={`flex flex-col gap-0.5 ${className}`}>
-      <span className="text-[9px] uppercase font-bold text-gray-400 px-0.5 tracking-wider whitespace-nowrap">{label}</span>
+      <span className="text-[9px] uppercase font-bold text-gray-800 px-0.5 tracking-wider whitespace-nowrap">{label}</span>
       {children}
     </div>
   );
@@ -270,7 +247,7 @@ function CauseActionFields({
   internalOptions, showCustomerWhenExternal,
 }: {
   row: CauseActionRow; onChange: (updated: CauseActionRow) => void;
-  machines?: { id: string; name: string }[]; suppliers?: { id: string; name: string }[];
+  machines?: { id: string; name: string ;code: string}[]; suppliers?: { id: string; name: string }[];
   customers?: { id: string; name: string }[]; departments?: { id: string; name: string; code: string }[];
   showMachine?: boolean; showSupplier?: boolean; showDepartment?: boolean;
   showInternalExternal?: boolean; internalOptions?: string[]; showCustomerWhenExternal?: boolean;
@@ -283,7 +260,7 @@ function CauseActionFields({
         <Field label="Machine" className="shrink-0">
           <Select value={row.machineId || ''} onValueChange={(v) => onChange({ ...row, machineId: v })}>
             <SelectTrigger className="h-7 text-[10px] font-semibold w-[90px]"><SelectValue placeholder="Machine" /></SelectTrigger>
-            <SelectContent>{machines.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
+            <SelectContent>{machines.map(m => <SelectItem key={m.id} value={m.id}>{m.code}</SelectItem>)}</SelectContent>
           </Select>
         </Field>
       )}
@@ -351,12 +328,20 @@ function CauseActionFields({
 
 /* ═══════════════════════ MAIN COMPONENT ═══════════════════════ */
 export default function UpdateDailyEntry() {
-  const { partTypes, customers, suppliers, machines, departments } = useMasterData();
+  const { partTypes, customers, suppliers, machines, departments, deptOwners } = useMasterData();
+
+  const { lastEntry } = useDailyEntry();
+  const getOwner = useCallback((sl: number) => deptOwners.find(o => o.sl === sl) || { name: '', email: '' }, [deptOwners]);
+
+  const emptyCauseAction = useCallback((sl?: number): CauseActionRow => ({
+    cause: '', action: '', responsible: sl ? getOwner(sl).name : '', targetDate: '',
+  }), [getOwner]);
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [formData, setFormData] = useState<DailyEntryType>({ ...defaultEntry });
   const [isSaving, setIsSaving] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [islastentry, setIslastentry] = useState(false);
 
   // — Fetch record for given date —
   const handleFetch = useCallback(async (date: string) => {
@@ -376,6 +361,16 @@ export default function UpdateDailyEntry() {
       }
     }
   }, []);
+
+  const formatSalesValue = (value:number) => {
+  if (!value) return 0;
+
+  if (value > 99) {
+    return (value / 100).toFixed(2) + " Cr";
+  }
+  return value.toFixed(2) + " L";
+};
+
 
   // — Auto-calculate cumulative OT (display only) —
   useEffect(() => {
@@ -404,6 +399,14 @@ export default function UpdateDailyEntry() {
       setFormData(prev => ({ ...prev, pdiIssues: { ...prev.pdiIssues, hasIssue: true } }));
     }
   }, [formData.qualityRatios.pdiRatio]);
+
+  useEffect(() => {
+    if (formData.date && lastEntry?.date) {
+      setIslastentry(formData.date === lastEntry.date);
+    } else {
+      setIslastentry(false);
+    }
+  }, [formData.date, lastEntry]);
 
   const trimSupplierRejections = useCallback(() => {
     setFormData(prev => {
@@ -479,17 +482,17 @@ export default function UpdateDailyEntry() {
       {/* ═══ Main Table ═══ */}
       <div className="daily-entry-card">
         {/* Header */}
-        <div className="daily-entry-header px-4 py-3" style={{ background: 'linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)' }}>
+        <div className="daily-entry-header px-4 py-3" style={{ background:'#134E4A' }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <FileText className="w-4 h-4 text-blue-400" />
               <h1 className="text-xs font-semibold text-white">
-                Update Record — <span className="text-blue-300">{formattedDate}</span>
+                Update Record — <span className="text-blue-200">{formattedDate}</span>
               </h1>
             </div>
             <button
               onClick={() => { setSelectedDate(null); setNotFound(false); }}
-              className="text-[10px] text-white/40 hover:text-blue-300 transition-colors font-medium flex items-center gap-1"
+              className="text-[10px] text-white hover:text-blue-300 transition-colors font-medium flex items-center gap-1"
             >
               <Calendar className="w-3 h-3" /> Change Date
             </button>
@@ -709,30 +712,30 @@ export default function UpdateDailyEntry() {
               return (
                 <EntryRow key={idx} onRemove={formData.overtime.length > 0 ? () => setFormData(prev => ({ ...prev, overtime: prev.overtime.filter((_, i) => i !== idx) })) : undefined}>
                   <div className="flex items-end gap-2 flex-wrap w-full">
-                    <Field label="Department" className="shrink-0" disabled={true}>
-                      <Select value={entry.departmentId} disabled={true} onValueChange={(v) => {
+                    <Field label="Department" className="shrink-0">
+                      <Select value={entry.departmentId} disabled={!islastentry} onValueChange={(v) => {
                         const u = [...formData.overtime]; const ti = formData.overtime.length === 0 ? 0 : idx;
                         u[ti] = { ...entry, departmentId: v, machineId: '' };
                         setFormData(prev => ({ ...prev, overtime: u }));
                       }}>
-                        <SelectTrigger className="h-7 text-[10px] font-semibold w-[110px] "><SelectValue placeholder="Select" /></SelectTrigger>
+                        <SelectTrigger className="h-7 text-[10px] font-semibold w-[110px]"><SelectValue placeholder="Select" /></SelectTrigger>
                         <SelectContent>{departments.map(d => <SelectItem key={d.id} value={d.id}>{d.code}</SelectItem>)}</SelectContent>
                       </Select>
                     </Field>
                     {isPRD && (
                       <Field label="Machine" className="shrink-0">
-                        <Select  value={entry.machineId || ''}  onValueChange={(v) => {
+                        <Select value={entry.machineId || ''} disabled={!islastentry} onValueChange={(v) => {
                           const u = [...formData.overtime]; const ti = formData.overtime.length === 0 ? 0 : idx;
                           u[ti] = { ...entry, machineId: v };
                           setFormData(prev => ({ ...prev, overtime: u }));
                         }}>
                           <SelectTrigger className="h-7 text-[10px] font-semibold w-[100px]"><SelectValue placeholder="Machine" /></SelectTrigger>
-                          <SelectContent>{machines.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
+                          <SelectContent>{machines.map(m => <SelectItem key={m.id} value={m.id}>{m.code}</SelectItem>)}</SelectContent>
                         </Select>
                       </Field>
                     )}
                     <Field label="Hours" className="shrink-0">
-                      <Input type="number" step="0.5"  disabled={true} value={numVal(entry.hours)}
+                      <Input type="number" step="0.5" disabled={!islastentry} value={numVal(entry.hours)}
                         onChange={(e) => {
                           const u = [...formData.overtime]; const ti = formData.overtime.length === 0 ? 0 : idx;
                           u[ti] = { ...entry, hours: parseFloat(e.target.value) || 0 };
@@ -742,7 +745,7 @@ export default function UpdateDailyEntry() {
                     </Field>
                     {hasHours && (
                       <Field label="Reason" className="flex-1 min-w-0">
-                        <Input value={entry.reason} disabled={true} onChange={(e) => {
+                        <Input value={entry.reason} disabled={!islastentry} onChange={(e) => {
                           const u = [...formData.overtime]; const ti = formData.overtime.length === 0 ? 0 : idx;
                           u[ti] = { ...entry, reason: e.target.value };
                           setFormData(prev => ({ ...prev, overtime: u }));
@@ -794,7 +797,7 @@ export default function UpdateDailyEntry() {
                             if (idx >= 0) {
                               updated[idx] = { ...updated[idx], quantity: val };
                             } else {
-                              updated.push({ customerId: cust.id, quantity: val });
+                              updated.push({ customerId: cust.id,code:cust.code, quantity: val });
                             }
                             return { ...prev, dispatch: updated };
                           });
@@ -806,6 +809,7 @@ export default function UpdateDailyEntry() {
                   </div>
                 );
               })}
+              
             </div>
           </SectionRow>
 
@@ -830,9 +834,9 @@ export default function UpdateDailyEntry() {
                   </div>
                 </EntryRow>
                 {missed && m.causeActions.length === 0 && (() => { setFormData(prev => ({ ...prev, productionPlanAdherence: { ...prev.productionPlanAdherence, causeActions: [emptyCauseAction(9)] } })); return null; })()}
-                {missed && m.causeActions.map((ca, caIdx) => (
+                {m.causeActions.map((ca, caIdx) => (
                   <div key={caIdx} className="mt-1 w-full">
-                    <EntryRow onRemove={m.causeActions.length > 1 ? () => setFormData(prev => ({ ...prev, productionPlanAdherence: { ...prev.productionPlanAdherence, causeActions: prev.productionPlanAdherence.causeActions.filter((_, i) => i !== caIdx) } })) : undefined}>
+                    <EntryRow onRemove={(missed ? m.causeActions.length > 1 : m.causeActions.length > 0) ? () => setFormData(prev => ({ ...prev, productionPlanAdherence: { ...prev.productionPlanAdherence, causeActions: prev.productionPlanAdherence.causeActions.filter((_, i) => i !== caIdx) } })) : undefined}>
                       <CauseActionFields row={ca} onChange={(u) => setFormData(prev => ({ ...prev, productionPlanAdherence: { ...prev.productionPlanAdherence, causeActions: updateCA(prev.productionPlanAdherence.causeActions, caIdx, u) } }))} />
                     </EntryRow>
                   </div>
@@ -971,7 +975,7 @@ export default function UpdateDailyEntry() {
                 </EntryRow>
                 {m.causeActions.map((ca, caIdx) => (
                   <div key={caIdx} className="mt-1 w-full">
-                    <CauseActionFields row={ca} onChange={(u) => setFormData(prev => ({ ...prev, absenteeism: { ...prev.absenteeism, causeActions: updateCA(prev.absenteeism.causeActions, caIdx, u) } }))} />
+                    <CauseActionFields row={ca} showMachine={true} machines={machines} onChange={(u) => setFormData(prev => ({ ...prev, absenteeism: { ...prev.absenteeism, causeActions: updateCA(prev.absenteeism.causeActions, caIdx, u) } }))} />
                   </div>
                 ))}
               </SectionRow>
@@ -1002,7 +1006,7 @@ export default function UpdateDailyEntry() {
                           setFormData(prev => ({ ...prev, machineBreakdown: { ...prev.machineBreakdown, causeActions: u } }));
                         }}>
                           <SelectTrigger className="h-7 text-[10px] font-semibold w-[100px]"><SelectValue placeholder="Machine" /></SelectTrigger>
-                          <SelectContent>{machines.map(mc => <SelectItem key={mc.id} value={mc.id}>{mc.name}</SelectItem>)}</SelectContent>
+                          <SelectContent>{machines.map(mc => <SelectItem key={mc.id} value={mc.id}>{mc.code}</SelectItem>)}</SelectContent>
                         </Select>
                       </Field>
                     )}
@@ -1020,15 +1024,15 @@ export default function UpdateDailyEntry() {
             );
           })()}
 
-          {/* ══ 16. Unit Consumption (KVAH) — cumulative read-only ══ */}
-          <SectionRow number={16} title="Unit Consumption (KVAH)" target="—" highlight disabled>
+          {/* ══ 16. Unit Consumption (KVAH) — cumulative editable if latest ══ */}
+          <SectionRow number={16} title="Unit Consumption (KVAH)" target="—" highlight={!islastentry} disabled={!islastentry}>
             <EntryRow>
               <div className="flex items-end gap-2 flex-wrap">
                 <Field label="Cumulative" className="shrink-0">
                   <Input value={numVal(formData.utilities.cumulativeElectricity)} disabled className="h-7 text-[10px] font-bold bg-gray-100 w-[90px] text-center" />
                 </Field>
                 <Field label="Shift" className="shrink-0">
-                  <Select value={formData.utilities.electricityShift} disabled={true} onValueChange={(v) => setFormData(prev => ({ ...prev, utilities: { ...prev.utilities, electricityShift: v } }))}>
+                  <Select value={formData.utilities.electricityShift} disabled={!islastentry} onValueChange={(v) => setFormData(prev => ({ ...prev, utilities: { ...prev.utilities, electricityShift: v } }))}>
                     <SelectTrigger className="h-7 text-[10px] font-semibold w-[70px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="A">A</SelectItem><SelectItem value="AB">AB</SelectItem><SelectItem value="ABC">ABC</SelectItem>
@@ -1036,7 +1040,7 @@ export default function UpdateDailyEntry() {
                   </Select>
                 </Field>
                 <Field label="Reading" className="shrink-0">
-                  <Input type="number" disabled={true} value={numVal(formData.utilities.electricityKVAH)}
+                  <Input type="number" disabled={!islastentry} value={numVal(formData.utilities.electricityKVAH)}
                     onChange={(e) => setFormData(prev => ({ ...prev, utilities: { ...prev.utilities, electricityKVAH: parseFloat(e.target.value) || 0 } }))}
                     className="h-7 text-[10px] font-semibold w-[90px]" />
                 </Field>
@@ -1044,15 +1048,15 @@ export default function UpdateDailyEntry() {
             </EntryRow>
           </SectionRow>
 
-          {/* ══ 17. Diesel Consumption — cumulative read-only ══ */}
-          <SectionRow number={17} title="Diesel Consumption (LTR)" target="0" highlight disabled>
+          {/* ══ 17. Diesel Consumption — cumulative editable if latest ══ */}
+          <SectionRow number={17} title="Diesel Consumption (LTR)" target="0" highlight={!islastentry} disabled={!islastentry}>
             <EntryRow>
               <div className="flex items-end gap-2 flex-wrap">
                 <Field label="Cumulative" className="shrink-0">
                   <Input value={numVal(formData.utilities.cumulativeDiesel)} disabled className="h-7 text-[10px] font-bold bg-gray-100 w-[90px] text-center" />
                 </Field>
                 <Field label="Shift" className="shrink-0">
-                  <Select value={formData.utilities.dieselShift} disabled={true} onValueChange={(v) => setFormData(prev => ({ ...prev, utilities: { ...prev.utilities, dieselShift: v } }))}>
+                  <Select value={formData.utilities.dieselShift} disabled={!islastentry} onValueChange={(v) => setFormData(prev => ({ ...prev, utilities: { ...prev.utilities, dieselShift: v } }))}>
                     <SelectTrigger className="h-7 text-[10px] font-semibold w-[70px] disabled:opacity-50"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="A">A</SelectItem><SelectItem value="AB">AB</SelectItem><SelectItem value="ABC">ABC</SelectItem>
@@ -1060,7 +1064,7 @@ export default function UpdateDailyEntry() {
                   </Select>
                 </Field>
                 <Field label="Reading" className="shrink-0">
-                  <Input type="number" disabled={true} value={numVal(formData.utilities.dieselLTR)}
+                  <Input type="number" disabled={!islastentry} value={numVal(formData.utilities.dieselLTR)}
                     onChange={(e) => setFormData(prev => ({ ...prev, utilities: { ...prev.utilities, dieselLTR: parseFloat(e.target.value) || 0 } }))}
                     className="h-7 text-[10px] font-semibold w-[90px] disabled:opacity-50 " />
                 </Field>
@@ -1085,36 +1089,36 @@ export default function UpdateDailyEntry() {
             </EntryRow>
           </SectionRow>
 
-          {/* ══ 19. Sales — cumulative read-only ══ */}
-          <SectionRow number={19} title="Sales Values (Last Day & Cumm)" target="—" disabled>
+          {/* ══ 19. Sales — cumulative editable if latest ══ */}
+          <SectionRow number={19} title="Sales Values (Last Day & Cumm)" target="—" disabled={!islastentry}>
             <EntryRow>
               <div className="flex items-end gap-2 flex-wrap">
                 <Field label="Daily (₹L)" className="shrink-0">
-                  <Input type="number" disabled={true} value={numVal(formData.sales.dailySales)}
+                  <Input type="number" disabled={!islastentry} value={numVal(formData.sales.dailySales)}
                     onChange={(e) => setFormData(prev => ({ ...prev, sales: { ...prev.sales, dailySales: parseFloat(e.target.value) || 0 } }))}
                     className="h-7 text-[10px] font-semibold w-[80px] disabled:cursor-not-allowed" />
                 </Field>
                 <Field label="Cumulative (₹L)" className="shrink-0">
-                  <Input value={numVal(formData.sales.cumulativeSales)} disabled className="h-7 text-[10px] font-bold bg-gray-100 w-[80px] text-center" />
+                  <Input value={formatSalesValue(formData.sales.cumulativeSales)} disabled className="h-7 text-[10px] font-bold bg-gray-100 w-[80px] text-center" />
                 </Field>
               </div>
             </EntryRow>
           </SectionRow>
 
-          {/* ══ 20. Training — cumulative read-only ══ */}
-          <SectionRow number={20} title="Training Hours" target="30 mins" highlight disabled>
+          {/* ══ 20. Training — cumulative editable if latest ══ */}
+          <SectionRow number={20} title="Training Hours" target="30 mins" highlight={!islastentry} disabled={!islastentry}>
             <EntryRow>
               <div className="flex items-end gap-2 flex-wrap">
                 <Field label="Cumulative Hrs" className="shrink-0" >
                   <Input value={numVal(formData.training.cumulativeHours)} disabled className="h-7 text-[10px] font-bold bg-gray-100 w-[80px] text-center" />
                 </Field>
                 <Field label="Training Hours" className="shrink-0">
-                  <Input type="number" disabled={true} value={numVal(formData.training.dailyHours)}
+                  <Input type="number" disabled={!islastentry} value={numVal(formData.training.dailyHours)}
                     onChange={(e) => setFormData(prev => ({ ...prev, training: { ...prev.training, dailyHours: parseFloat(e.target.value) || 0 } }))}
                     className="h-7 text-[10px] font-semibold w-[80px] disabled:cursor-not-allowed" />
                 </Field>
                 <Field label="Topic" className="flex-1 min-w-0">
-                  <Input value={formData.training.topic} disabled={true}
+                  <Input value={formData.training.topic} disabled={!islastentry}
                     onChange={(e) => setFormData(prev => ({ ...prev, training: { ...prev.training, topic: e.target.value } }))}
                     className="h-7 text-[10px] font-medium w-full disabled:cursor-not-allowed" placeholder="Training topic..." />
                 </Field>

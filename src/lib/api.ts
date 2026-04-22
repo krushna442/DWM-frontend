@@ -3,7 +3,7 @@
  * Backend base URL: http://localhost:3000/api
  */
 
-import type { DailyEntry, PartType, Customer, Supplier, Machine, Department, User } from '@/types';
+import type { DailyEntry, PartType, Customer, Supplier, Machine, Department, User, DeptOwner } from '@/types';
 
 const BASE = 'http://localhost:3000/api';
 
@@ -181,6 +181,23 @@ export async function replaceMasterList<T>(
   items: T[]
 ): Promise<{ list_key: string; items: T[] }> {
   return req('PUT', `/master/${listKey}`, { items });
+}
+
+// ─── Dept Owners ──────────────────────────────────────────────────────────────
+
+/** Fetch all department owners sorted by sl */
+export async function getDeptOwners(): Promise<DeptOwner[]> {
+  return req('GET', '/dept-owners');
+}
+
+/** Update a single department owner by serial number */
+export async function updateDeptOwner(sl: number, name: string, email: string): Promise<DeptOwner> {
+  return req('PATCH', `/dept-owners/${sl}`, { name, email });
+}
+
+/** Replace the entire department owners list */
+export async function updateDeptOwnersBulk(items: DeptOwner[]): Promise<DeptOwner[]> {
+  return req('PUT', '/dept-owners', { items });
 }
 
 // ─── Analytics ────────────────────────────────────────────────────────────────

@@ -40,6 +40,13 @@ export interface Department {
   isActive: boolean;
 }
 
+export interface DeptOwner {
+  id?: string;
+  sl: number;
+  name: string;
+  email: string;
+}
+
 // Reusable Cause/Action Row
 export interface CauseActionRow {
   machineId?: string;
@@ -108,6 +115,7 @@ export interface CumulativeOT {
 // Dispatch Entry
 export interface DispatchEntry {
   customerId: string;
+  code: string;
   quantity: number;
 }
 

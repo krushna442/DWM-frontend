@@ -29,7 +29,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0F172A] relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center bg-gray-300 relative overflow-hidden">
       {/* Dynamic Background Effects */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/10 rounded-full blur-[120px] animate-pulse" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-cyan-600/10 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: '2s' }} />

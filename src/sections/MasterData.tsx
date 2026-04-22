@@ -10,7 +10,8 @@ import {
   Wrench,
   Search,
   CheckCircle2,
-  XCircle
+  XCircle,
+  ShieldCheck
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -34,14 +35,16 @@ import { toast } from 'sonner';
 import { useMasterData } from '@/context/MasterDataContext';
 import type { PartType, Customer, Supplier, Machine, Department } from '@/types';
 
-type EntityType = 'partTypes' | 'customers' | 'suppliers' | 'machines' | 'departments';
+type EntityType = 'partTypes' | 'customers' | 'suppliers' | 'machines' | 'departments' | 'deptOwners';
 
 interface FormData {
   name: string;
-  code: string;
+  code?: string;
   description: string;
   isActive: boolean;
   department?: string;
+  sl?: number;
+  email?: string;
 }
 
 const defaultFormData: FormData = {
@@ -50,6 +53,8 @@ const defaultFormData: FormData = {
   description: '',
   isActive: true,
   department: '',
+  sl: 0,
+  email: '',
 };
 
 export default function MasterData() {
@@ -74,6 +79,8 @@ export default function MasterData() {
     addDepartment,
     updateDepartment,
     deleteDepartment,
+    deptOwners,
+    updateDeptOwner,
   } = useMasterData();
 
   const [activeTab, setActiveTab] = useState<EntityType>('partTypes');
@@ -89,6 +96,7 @@ export default function MasterData() {
     { id: 'suppliers' as EntityType, label: 'Suppliers', icon: Factory },
     { id: 'machines' as EntityType, label: 'Machines', icon: Wrench },
     { id: 'departments' as EntityType, label: 'Departments', icon: Building2 },
+    { id: 'deptOwners' as EntityType, label: 'Dept. Owners', icon: ShieldCheck },
   ];
 
   const getData = () => {
@@ -98,14 +106,21 @@ export default function MasterData() {
       case 'suppliers': return suppliers;
       case 'machines': return machines;
       case 'departments': return departments;
+      case 'deptOwners': return deptOwners;
       default: return [];
     }
   };
 
-  const filteredData = getData().filter(item => 
-    item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.code.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredData = getData().filter(item => {
+    if (activeTab === 'deptOwners') {
+      const owner = item as any;
+      return (owner.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+              owner.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              owner.sl?.toString().includes(searchQuery));
+    }
+    return (item.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (item as any).code?.toLowerCase().includes(searchQuery.toLowerCase()));
+  });
 
   const handleAdd = () => {
     setEditingItem(null);
@@ -117,10 +132,12 @@ export default function MasterData() {
     setEditingItem(item);
     setFormData({
       name: item.name,
-      code: item.code,
+      code: (item as any).code || '',
       description: item.description || '',
       isActive: item.isActive,
       department: (item as Machine).department || '',
+      sl: item.sl || 0,
+      email: item.email || '',
     });
     setIsDialogOpen(true);
   };
@@ -156,7 +173,12 @@ export default function MasterData() {
   };
 
   const handleSave = async () => {
-    if (!formData.name || !formData.code) {
+    if (activeTab === 'deptOwners') {
+      if (!formData.name || !formData.email) {
+        toast.error('Name and email are required');
+        return;
+      }
+    } else if (!formData.name || !formData.code) {
       toast.error('Name and code are required');
       return;
     }
@@ -165,7 +187,7 @@ export default function MasterData() {
     try {
       const data = {
         name: formData.name,
-        code: formData.code,
+        code: formData.code || '',
         description: formData.description,
         isActive: formData.isActive,
         ...(activeTab === 'machines' && { department: formData.department }),
@@ -188,6 +210,9 @@ export default function MasterData() {
           case 'departments':
             await updateDepartment(editingItem.id, data);
             break;
+          case 'deptOwners':
+            await updateDeptOwner(formData.sl!, formData.name, formData.email!);
+            break;
         }
         toast.success('Item updated successfully');
       } else {
@@ -206,6 +231,9 @@ export default function MasterData() {
             break;
           case 'departments':
             await addDepartment(data as Omit<Department, 'id'>);
+            break;
+          case 'deptOwners':
+            await updateDeptOwner(formData.sl!, formData.name, formData.email!);
             break;
         }
         toast.success('Item added successfully');
@@ -267,7 +295,7 @@ export default function MasterData() {
                     </div>
                     <Button onClick={handleAdd} className="btn-primary">
                       <Plus className="w-4 h-4 mr-2" />
-                      Add {tab.label.slice(0, -1)}
+                      Add {tab.id === 'deptOwners' ? 'Owner' : tab.label.slice(0, -1)}
                     </Button>
                   </div>
                 </div>
@@ -276,10 +304,20 @@ export default function MasterData() {
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="table-header">
-                        <th className="text-left px-4 py-3 text-sm font-medium">Code</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium">Name</th>
-                        <th className="text-left px-4 py-3 text-sm font-medium">Description</th>
+                      <tr className="bg-[#065F46] text-gray-300">
+                        {tab.id === 'deptOwners' ? (
+                          <>
+                            <th className="text-left px-4 py-3 text-sm font-medium">SL</th>
+                            <th className="text-left px-4 py-3 text-sm font-medium">Name</th>
+                            <th className="text-left px-4 py-3 text-sm font-medium">Email</th>
+                          </>
+                        ) : (
+                          <>
+                            <th className="text-left px-4 py-3 text-sm font-medium">Code</th>
+                            <th className="text-left px-4 py-3 text-sm font-medium">Name</th>
+                            <th className="text-left px-4 py-3 text-sm font-medium">Description</th>
+                          </>
+                        )}
                         {tab.id === 'machines' && (
                           <th className="text-left px-4 py-3 text-sm font-medium">Department</th>
                         )}
@@ -289,27 +327,43 @@ export default function MasterData() {
                     </thead>
                     <tbody>
                       {filteredData.map((item: any) => (
-                        <tr key={item.id} className="table-row">
-                          <td className="px-4 py-3 text-sm font-medium number-display">{item.code}</td>
-                          <td className="px-4 py-3 text-sm">{item.name}</td>
-                          <td className="px-4 py-3 text-sm text-[#666666]">{item.description || '-'}</td>
+                        <tr key={item.id || item.sl} className="table-row">
+                          {tab.id === 'deptOwners' ? (
+                            <>
+                              <td className="px-4 py-3 text-sm font-medium number-display">{item.sl}</td>
+                              <td className="px-4 py-3 text-sm">{item.name}</td>
+                              <td className="px-4 py-3 text-sm">{item.email}</td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-4 py-3 text-sm font-medium number-display">{item.code}</td>
+                              <td className="px-4 py-3 text-sm">{item.name}</td>
+                              <td className="px-4 py-3 text-sm text-[#666666]">{item.description || '-'}</td>
+                            </>
+                          )}
                           {tab.id === 'machines' && (
                             <td className="px-4 py-3 text-sm">
                               {departments.find(d => d.id === item.department)?.name || '-'}
                             </td>
                           )}
                           <td className="px-4 py-3 text-sm">
-                            <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs ${
-                              item.isActive 
-                                ? 'bg-green-100 text-green-700' 
-                                : 'bg-gray-100 text-gray-700'
-                            }`}>
-                              {item.isActive ? (
-                                <><CheckCircle2 className="w-3 h-3" /> Active</>
-                              ) : (
-                                <><XCircle className="w-3 h-3" /> Inactive</>
-                              )}
-                            </span>
+                            {tab.id === 'deptOwners' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-green-100 text-green-700">
+                                <CheckCircle2 className="w-3 h-3" /> Active
+                              </span>
+                            ) : (
+                              <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs ${
+                                item.isActive 
+                                  ? 'bg-green-100 text-green-700' 
+                                  : 'bg-gray-100 text-gray-700'
+                              }`}>
+                                {item.isActive ? (
+                                  <><CheckCircle2 className="w-3 h-3" /> Active</>
+                                ) : (
+                                  <><XCircle className="w-3 h-3" /> Inactive</>
+                                )}
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-sm">
                             <div className="flex items-center gap-2">
@@ -321,14 +375,16 @@ export default function MasterData() {
                               >
                                 <Edit2 className="w-4 h-4" />
                               </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleDelete(item.id)}
-                                className="text-[#666666] hover:text-red-500"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+                              {tab.id !== 'deptOwners' && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleDelete(item.id)}
+                                  className="text-[#666666] hover:text-red-500"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -336,10 +392,10 @@ export default function MasterData() {
                       {filteredData.length === 0 && (
                         <tr>
                           <td 
-                            colSpan={tab.id === 'machines' ? 6 : 5} 
+                            colSpan={tab.id === 'machines' ? 6 : (tab.id === 'deptOwners' ? 5 : 5)} 
                             className="px-4 py-8 text-center text-[#999999]"
                           >
-                            No {tab.label.toLowerCase()} found. Click "Add {tab.label.slice(0, -1)}" to create one.
+                            No {tab.label.toLowerCase()} found. {tab.id !== 'deptOwners' && `Click "Add ${tab.label.slice(0, -1)}" to create one.`}
                           </td>
                         </tr>
                       )}
@@ -357,59 +413,96 @@ export default function MasterData() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="section-title">
-              {editingItem ? 'Edit' : 'Add'} {tabs.find(t => t.id === activeTab)?.label.slice(0, -1)}
+              {editingItem ? 'Edit' : 'Add'} {activeTab === 'deptOwners' ? 'Owner' : tabs.find(t => t.id === activeTab)?.label.slice(0, -1)}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div>
-              <Label className="form-label">Code *</Label>
-              <Input
-                value={formData.code}
-                onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
-                className="input-field"
-                placeholder="Enter code"
-              />
-            </div>
-            <div>
-              <Label className="form-label">Name *</Label>
-              <Input
-                value={formData.name}
-                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                className="input-field"
-                placeholder="Enter name"
-              />
-            </div>
-            <div>
-              <Label className="form-label">Description</Label>
-              <Input
-                value={formData.description}
-                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                className="input-field"
-                placeholder="Enter description (optional)"
-              />
-            </div>
-            {activeTab === 'machines' && (
-              <div>
-                <Label className="form-label">Department</Label>
-                <select
-                  value={formData.department}
-                  onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
-                  className="input-field w-full"
-                >
-                  <option value="">Select Department</option>
-                  {departments.filter(d => d.isActive).map(dept => (
-                    <option key={dept.id} value={dept.id}>{dept.name}</option>
-                  ))}
-                </select>
-              </div>
+            {activeTab === 'deptOwners' ? (
+              <>
+                <div>
+                  <Label className="form-label">Serial Number (SL) *</Label>
+                  <Input
+                    type="number"
+                    value={formData.sl}
+                    onChange={(e) => setFormData(prev => ({ ...prev, sl: parseInt(e.target.value) || 0 }))}
+                    className="input-field"
+                    placeholder="Enter serial number"
+                    disabled={!!editingItem} // Disable editing SL for existing owners
+                  />
+                </div>
+                <div>
+                  <Label className="form-label">Owner Name *</Label>
+                  <Input
+                    value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    className="input-field"
+                    placeholder="Enter owner name"
+                  />
+                </div>
+                <div>
+                  <Label className="form-label">Owner Email *</Label>
+                  <Input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                    className="input-field"
+                    placeholder="Enter owner email"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <Label className="form-label">Code *</Label>
+                  <Input
+                    value={formData.code}
+                    onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
+                    className="input-field"
+                    placeholder="Enter code"
+                  />
+                </div>
+                <div>
+                  <Label className="form-label">Name *</Label>
+                  <Input
+                    value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    className="input-field"
+                    placeholder="Enter name"
+                  />
+                </div>
+                <div>
+                  <Label className="form-label">Description</Label>
+                  <Input
+                    value={formData.description}
+                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                    className="input-field"
+                    placeholder="Enter description (optional)"
+                  />
+                </div>
+                {activeTab === 'machines' && (
+                  <div>
+                    <Label className="form-label">Department</Label>
+                    <select
+                      value={formData.department}
+                      onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
+                      className="input-field w-full"
+                    >
+                      <option value="">Select Department</option>
+                      {departments.filter(d => d.isActive).map(dept => (
+                        <option key={dept.id} value={dept.id}>{dept.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="flex items-center gap-3">
+                  <Switch
+                    checked={formData.isActive}
+                    onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isActive: checked }))}
+                  />
+                  <Label className="text-sm">Active</Label>
+                </div>
+              </>
             )}
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={formData.isActive}
-                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, isActive: checked }))}
-              />
-              <Label className="text-sm">Active</Label>
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSaving}>

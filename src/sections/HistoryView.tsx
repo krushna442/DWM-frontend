@@ -656,7 +656,7 @@ export default function HistoryView() {
                     return (
                       <ExcelRow key={n} sl={n} mp="S" isEven={n % 2 === 0}
                         checkpoint="Last Day Dispatch (TML | ALW | PNR)" target="—"
-                        valueCell={<ValCell val={disp.map(e=>`${e.customerId}: ${e.quantity}`).join(' | ')||'—'} bg={COLOR.na} />}
+                        valueCell={<ValCell val={disp.map(e=>`${partTypes[Number(e.customerId)-1]?.code}: ${e.quantity}`).join(' | ') +' | '+'Total: ' + disp.reduce((acc, d) => acc + d.quantity, 0)||'—'} bg={COLOR.na} />}
                         causesRows="—" actionRows="—" responsibleRows="—" targetDateRows="—" />
                     );
                   })()}

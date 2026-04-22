@@ -44,7 +44,7 @@ function AppContent() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-center gap-4">
+      <div className="min-h-screen bg-gray-400 flex flex-col items-center justify-center gap-4">
         <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
         <p className="text-white/60 font-medium tracking-widest text-xs uppercase">Initializing System...</p>
       </div>
@@ -69,7 +69,7 @@ function AppContent() {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: '#dbd8d8ff' }}>
       {/* ═══ Top Navigation Bar ═══ */}
-      <header className="sticky top-0 z-50 border-b border-white/10 dark-bg shadow-lg" style={{
+      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#134E4A] shadow-lg" style={{
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
       }}>
@@ -117,7 +117,7 @@ function AppContent() {
           {/* User Profile / Logout */}
           <div className="flex items-center gap-4">
             <div className="hidden md:flex flex-col items-end">
-              <p className="text-sm font-semibold text-white">{user?.name}</p>
+              <p className="text-sm font-semibold text-gray-400">{user?.name}</p>
             </div>
             <div className="w-px h-8 bg-white/10 mx-2" />
             <Button 

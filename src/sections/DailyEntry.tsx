@@ -40,46 +40,7 @@ import type {
   CauseActionRow,
 } from '@/types';
 
-/* ─────────────────────── OWNERS ARRAY ─────────────────────── */
-const OWNERS: { name: string; email: string }[] = [
-  { name: '', email: '' },
-  { name: 'Ashish', email: 'ashish.tiwari1@rsbglobal.com' },
-  { name: 'Sudhir', email: 'sudhir.sahoo@rsbglobal.com' },
-  { name: 'Brijesh', email: 'brijesh.singh@rsbglobal.com' },
-  { name: 'Brijesh', email: 'brijesh.singh@rsbglobal.com' },
-  { name: 'Brijesh', email: 'brijesh.singh@rsbglobal.com' },
-  { name: 'Brijesh', email: 'brijesh.singh@rsbglobal.com' },
-  { name: 'Brijesh', email: 'brijesh.singh@rsbglobal.com' },
-  { name: 'OM', email: 'om.chand@rsbglobal.com' },
-  { name: 'Rakesh', email: 'rakesh.pal@rsbglobal.com' },
-  { name: 'OM', email: 'om.chand@rsbglobal.com' },
-  { name: 'Dipti', email: 'dipti.das@rsbglobal.com' },
-  { name: 'Dipti', email: 'dipti.das@rsbglobal.com' },
-  { name: 'Sudhir', email: 'sudhir.sahoo@rsbglobal.com' },
-  { name: 'Ashish', email: 'ashish.tiwari1@rsbglobal.com' },
-  { name: 'Avinash', email: 'avinash.choudhary@rsbglobal.com' },
-  { name: 'Avinash', email: 'avinash.choudhary@rsbglobal.com' },
-  { name: 'Avinash', email: 'avinash.choudhary@rsbglobal.com' },
-  { name: 'Avinash', email: 'avinash.choudhary@rsbglobal.com' },
-  { name: 'OM', email: 'om.chand@rsbglobal.com' },
-  { name: 'Ashish', email: 'ashish.tiwari1@rsbglobal.com' },
-  { name: 'Sudhir', email: 'sudhir.sahoo@rsbglobal.com' },
-  { name: 'Abhishek', email: 'abhishek.pal@rsbglobal.com' },
-  { name: 'Sudhir', email: 'sudhir.sahoo@rsbglobal.com' },
-  { name: 'Sudhir', email: 'sudhir.sahoo@rsbglobal.com' },
-  { name: 'Vikash', email: 'vikas.kumar@rsbglobal.com' },
-  { name: 'Shantanu', email: 'santanu.singh@rsbglobal.com' },
-  { name: 'Nihar', email: 'nihar.khuntia@rsbglobal.com' },
-  { name: 'Rupesh', email: 'Rupesh.pandey@rsbglobal.com' },
-  { name: 'Dipti', email: 'dipti.das@rsbglobal.com' },
-  { name: 'Manager', email: '' },
-];
-
-const getOwner = (n: number) => OWNERS[n] || { name: '', email: '' };
-
-const emptyCauseAction = (ownerIdx?: number): CauseActionRow => ({
-  cause: '', action: '', responsible: ownerIdx ? getOwner(ownerIdx).name : '', targetDate: '',
-});
+/* ─── clamp percentage input ─── */
 
 /* ─── clamp percentage input ─── */
 const clampPct = (v: number) => Math.min(100, Math.max(0, v));
@@ -169,13 +130,28 @@ interface SectionRowProps {
 }
 
 function SectionRow({ number, title, target, status, onAdd, children, highlight, secondNumber, sectionData, date, showOwner = true }: SectionRowProps) {
-  const ownerName = getOwner(number).name;
-  const ownerEmail = getOwner(number).email;
+  const { deptOwners } = useMasterData();
+  const owner = deptOwners.find(o => o.sl === number) || { name: '', email: '' };
+  const ownerName = owner.name;
+  const ownerEmail = owner.email;
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const rowColors = [
+    'bg-blue-50',
+    'bg-emerald-50',
+    'bg-violet-50',
+    'bg-amber-50',
+    'bg-fuchsia-50',
+    'bg-cyan-50',
+    'bg-rose-50',
+    'bg-teal-50',
+    'bg-indigo-50',
+    'bg-lime-50'
+  ];
+
   const bgClass = highlight
-    ? 'section-row-highlight'
-    : number % 2 === 0 ? 'section-row-even' : 'section-row-odd';
+    ? 'bg-yellow-100'
+    : rowColors[number % rowColors.length];
 
   const handleNotifyClick = () => {
     if (!ownerEmail) {
@@ -207,7 +183,7 @@ function SectionRow({ number, title, target, status, onAdd, children, highlight,
 
   return (
     <>
-      <div className={`flex items-start gap-0 border-b border-[#E8E8E8] transition-all duration-200 hover:bg-blue-50/10 ${bgClass}`}>
+      <div className={`flex items-start gap-0 border-b border-white transition-all duration-200 hover:brightness-95 ${bgClass}`}>
         {/* Number + Title + Target */}
         <div className="flex w-[200px] shrink-0 items-start gap-2 px-2 py-2.5 bg-[#00BCD4] self-stretch">
           <div className="flex mt-0.5 items-center gap-0.5 shrink-0">
@@ -456,7 +432,7 @@ function CauseActionFields({
 }: {
   row: CauseActionRow;
   onChange: (updated: CauseActionRow) => void;
-  machines?: { id: string; name: string }[];
+  machines?: { id: string; name: string ; code: string}[];
   suppliers?: { id: string; name: string }[];
   customers?: { id: string; name: string }[];
   departments?: { id: string; name: string; code: string }[];
@@ -481,7 +457,7 @@ function CauseActionFields({
             </SelectTrigger>
             <SelectContent>
               {machines.map(m => (
-                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                <SelectItem key={m.id} value={m.id}>{m.code}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -639,7 +615,13 @@ export default function DailyEntry() {
     resetForm,
     isAlreadySaved,
   } = useDailyEntry();
-  const { partTypes, customers, suppliers, machines, departments } = useMasterData();
+  const { partTypes, customers, suppliers, machines, departments ,deptOwners} = useMasterData();
+
+  const getOwner = (sl: number) => deptOwners.find(o => o.sl === sl) || { name: '', email: '' };
+
+  const emptyCauseAction = (sl?: number): CauseActionRow => ({
+    cause: '', action: '', responsible: sl ? getOwner(sl).name : '', targetDate: '',
+  });
 
   // ── Auto-calculate cumulative OT Hours ──
   useEffect(() => {
@@ -802,7 +784,7 @@ export default function DailyEntry() {
       {/* ═══ Main Table ═══ */}
       <div className="daily-entry-card">
         {/* Header */}
-        <div className="daily-entry-header px-4 py-3">
+        <div className="bg-[#134E4A] px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <FileText className="w-4 h-4 text-[#C9A962]" />
@@ -812,7 +794,7 @@ export default function DailyEntry() {
             </div>
             <button
               onClick={resetForm}
-              className="text-[10px] text-white/40 hover:text-[#C9A962] transition-colors font-medium flex items-center gap-1"
+              className="text-[10px] text-white hover:text-[#C9A962] transition-colors font-medium flex items-center gap-1"
             >
               <Calendar className="w-3 h-3" /> Change Date
             </button>
@@ -1201,7 +1183,7 @@ export default function DailyEntry() {
                           </SelectTrigger>
                           <SelectContent>
                             {machines.map(m => (
-                              <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                              <SelectItem key={m.id} value={m.id}>{m.code}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1271,12 +1253,12 @@ export default function DailyEntry() {
             sectionData={formData.dispatch}
             date={selectedDate}
           >
-            <div className="flex gap-4">
+            <div className="flex gap-4 ">
               {customers.map((cust) => {
                 const entry = formData.dispatch.find(d => d.customerId === cust.id) || { customerId: cust.id, quantity: 0 };
                 return (
-                  <div key={cust.id} className="flex flex-col border border-[#E5E5E5] rounded overflow-hidden w-[130px] bg-white shadow-sm">
-                    <div className="text-[10px] font-bold text-center py-1.5 bg-gray-50 border-b border-[#E5E5E5] text-[#1A1A1A] uppercase tracking-tighter">
+                  <div key={cust.id} className="flex bg-white flex-col border border-[#E5E5E5] rounded overflow-hidden w-[130px] bg-white shadow-sm">
+                    <div className="text-[10px] bg-white font-bold text-center py-1.5 bg-gray-50 border-b border-[#E5E5E5] text-[#1A1A1A] uppercase tracking-tighter">
                       {cust.code}
                     </div>
                     <div className="p-1.5">
@@ -1291,7 +1273,7 @@ export default function DailyEntry() {
                             if (idx >= 0) {
                               updated[idx] = { ...updated[idx], quantity: val };
                             } else {
-                              updated.push({ customerId: cust.id, quantity: val });
+                              updated.push({ customerId: cust.id,code:cust.code, quantity: val });
                             }
                             return { ...prev, dispatch: updated };
                           });
@@ -1303,6 +1285,21 @@ export default function DailyEntry() {
                   </div>
                 );
               })}
+              {/* total dispatch */}
+              <div className="flex flex-col bg-white border border-[#E5E5E5] rounded overflow-hidden w-[130px] bg-white shadow-sm">
+                <div className="text-[10px] font-bold text-center py-1.5  border-b border-[#E5E5E5] text-[#1A1A1A] uppercase tracking-tighter">
+                  Total
+                </div>
+                <div className="p-1.5">
+                  <Input
+                    type="number"
+                    value={numVal(formData.dispatch.reduce((acc, d) => acc + d.quantity, 0))}
+                    disabled
+                    className="h-8 text-center text-[12px] font-bold border-[#E5E5E5] focus-visible:ring-[#C9A962]"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
             </div>
           </SectionRow>
 
@@ -1354,9 +1351,9 @@ export default function DailyEntry() {
                   setFormData(prev => ({ ...prev, productionPlanAdherence: { ...prev.productionPlanAdherence, causeActions: [emptyCauseAction(9)] } }));
                   return null;
                 })()}
-                {missed && metric.causeActions.map((ca, caIdx) => (
+                {metric.causeActions.map((ca, caIdx) => (
                   <div key={caIdx} className="mt-1 w-full">
-                    <EntryRow onRemove={metric.causeActions.length > 1 ? () => setFormData(prev => ({
+                    <EntryRow onRemove={(missed ? metric.causeActions.length > 1 : metric.causeActions.length > 0) ? () => setFormData(prev => ({
                       ...prev,
                       productionPlanAdherence: { ...prev.productionPlanAdherence, causeActions: prev.productionPlanAdherence.causeActions.filter((_, i) => i !== caIdx) }
                     })) : undefined}>
@@ -1614,6 +1611,8 @@ export default function DailyEntry() {
                 {metric.causeActions.map((ca, caIdx) => (
                   <div key={caIdx} className="mt-1 w-full">
                     <CauseActionFields
+                      showMachine={true}
+                      machines={machines}
                       row={ca}
                       onChange={(updated) => setFormData(prev => ({
                         ...prev,
@@ -1679,7 +1678,7 @@ export default function DailyEntry() {
                           </SelectTrigger>
                           <SelectContent>
                             {machines.map(m => (
-                              <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                              <SelectItem key={m.id} value={m.id}>{m.code}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
