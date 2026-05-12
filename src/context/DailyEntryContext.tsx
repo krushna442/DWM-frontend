@@ -112,24 +112,24 @@ export function DailyEntryProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     (async () => {
       try {
-        // ALWAYS fetch the latest saved record to compute cumulative bases
+        // ALWAYS fetch the last inserted record of current month to compute cumulative bases
         try {
-          const latest = await api.getLatestReport();
+          const latest = await api.getLastInsertedReport();
           if (latest) {
+            setLastEntry(latest);
+            // Default bases from latest record (without adding daily values again to avoid doubling)
             const bases: PrevCumulatives = {
               otHours:      (latest.cumulativeOT?.todayCumulative   || 0),
-              electricity:  (latest.utilities?.cumulativeElectricity || 0) + (latest.utilities?.electricityKVAH || 0),
-              diesel:       (latest.utilities?.cumulativeDiesel      || 0) + (latest.utilities?.dieselLTR      || 0),
-              sales:        (latest.sales?.cumulativeSales           || 0) + (latest.sales?.dailySales         || 0),
-              trainingHours:(latest.training?.cumulativeHours        || 0) + (latest.training?.dailyHours      || 0),
+              electricity:  (latest.utilities?.cumulativeElectricity || 0),
+              diesel:       (latest.utilities?.cumulativeDiesel      || 0),
+              sales:        (latest.sales?.cumulativeSales           || 0),
+              trainingHours:(latest.training?.cumulativeHours        || 0),
             };
             setPrevCumulatives(bases);
-            // We use functional update. If a draft doesn't overwrite it, this provides a fallback default
             setFormData(prev => ({
               ...prev,
               cumulativeOT: { ...prev.cumulativeOT, previousTotal: bases.otHours },
             }));
-            setLastEntry(latest);
           }
         } catch { /* no previous record — ignore */ }
 
@@ -148,6 +148,36 @@ export function DailyEntryProvider({ children }: { children: React.ReactNode }) 
       }
     })();
   }, []);
+
+  // ── Month Change Logic ──────────────────────────────────────────────────────
+  // When a date is selected, we check if it's a new month relative to the last saved record.
+  // If so, we reset cumulative bases to 0 for a "monthly renewal".
+  useEffect(() => {
+    if (!selectedDate || !lastEntry) return;
+
+    // Use split to avoid timezone issues with Date object for month/year comparison
+    const [sYear, sMonth] = selectedDate.split('-').map(Number);
+    const [lYear, lMonth] = (lastEntry.date || "").split('T')[0].split('-').map(Number);
+
+    if (!sYear || !sMonth || !lYear || !lMonth) return;
+
+    const isSameMonth = sYear === lYear && sMonth === lMonth;
+
+    if (!isSameMonth) {
+      setPrevCumulatives({
+        otHours: 0, electricity: 0, diesel: 0, sales: 0, trainingHours: 0,
+      });
+    } else {
+      // Restore correct bases from lastEntry (same month)
+      setPrevCumulatives({
+        otHours:      (lastEntry.cumulativeOT?.todayCumulative   || 0),
+        electricity:  (lastEntry.utilities?.cumulativeElectricity || 0),
+        diesel:       (lastEntry.utilities?.cumulativeDiesel      || 0),
+        sales:        (lastEntry.sales?.cumulativeSales           || 0),
+        trainingHours:(lastEntry.training?.cumulativeHours        || 0),
+      });
+    }
+  }, [selectedDate, lastEntry]);
 
   // ── Select a date (date popup CTA) ──────────────────────────────────────────
   const selectDate = useCallback(async (date: string) => {

@@ -1,11 +1,24 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Download, Calendar, Search, FileText, RefreshCw, ChevronRight, Trash2 } from 'lucide-react';
+import { Download, Calendar, Search, FileText, RefreshCw, ChevronRight, Trash2, TableProperties } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import * as api from '@/lib/api';
 import type { DailyEntry, CauseActionRow } from '@/types';
 import { useMasterData } from '@/context/MasterDataContext';
+
+interface MasterLookups {
+  partTypes: { id: string; name: string; code: string }[];
+  customers: { id: string; name: string; code: string }[];
+  suppliers: { id: string; name: string; code: string }[];
+  departments: { id: string; name: string; code: string }[];
+}
+function byId<T extends { id: string; name: string }>(arr: T[], id: string, fallback?: string): string {
+  return arr.find(x => x.id === id)?.name || fallback || id || '—';
+}
+function byIdCode<T extends { id: string; code: string }>(arr: T[], id: string): string {
+  return arr.find(x => x.id === id)?.code || id || '—';
+}
 
 // ─── Color tokens ──────────────────────────────────────────────────────────────
 const COLOR = {
@@ -149,8 +162,91 @@ function PurpleRow({ sl, mp, checkpoint, value, target = '—' }: {
   );
 }
 
+// ─── Map raw API response (f01_… schema) → DailyEntry ──────────────────────
+function mapRawToDailyEntry(raw: any): DailyEntry {
+  // Extract date from report_date ISO string or date string
+  const rawDate = raw.report_date || raw.date || '';
+  const date = rawDate.length > 10 ? rawDate.slice(0, 10) : rawDate;
+
+  const f01 = raw.f01_accident || { entries: [] };
+  const f02 = raw.f02_customer_rejection || { count: 0, items: [] };
+  const f04 = raw.f04_cycle_time || { front: 0, rear: 0, causeActions: [] };
+  const f05 = raw.f05_per_man_per_day || { actual: 0, target: 6, causeActions: [] };
+  const f06 = raw.f06_ot_hours_last_day || [];
+  const f07 = raw.f07_ot_hours_cumulative || { yesterdayOT: 0, previousTotal: 0, todayCumulative: 0 };
+  const f09 = raw.f09_prod_plan_adherence || { actual: 0, target: 95, causeActions: [] };
+  const f10 = raw.f10_otif_adherence || { actual: 0, target: 100, causeActions: [] };
+  const f11 = raw.f11_prod_hours_loss || { actual: 0, target: 0, causeActions: [] };
+  const f12 = raw.f12_line_quality_issue || { actual: 0, target: 0, causeActions: [] };
+  const f13 = raw.f13_poor_incoming_material || { actual: 0, target: 0, causeActions: [] };
+  const f14 = raw.f14_absenteeism || { actual: 0, target: 0, causeActions: [] };
+  const f15 = raw.f15_machine_breakdown || { actual: 0, target: 30, causeActions: [] };
+  const f16 = raw.f16_unit_consumption_last_day || { electricityKVAH: 0, electricityShift: 'A', dieselLTR: 0, dieselShift: 'A', powerFactor: 0, cumulativeElectricity: 0, cumulativeDiesel: 0 };
+  const f21 = raw.f21_sales || { dailySales: 0, cumulativeSales: 0 };
+  const f22 = raw.f22_training_last_day || { dailyHours: 0, cumulativeHours: 0, topic: '' };
+  const f24 = raw.f24_first_pass_ok || { firstPassOKRatio: 0, firstPassCauseActions: [], pdiRatio: 0, pdiCauseActions: [] };
+  const f26 = raw.f26_supplier_rejection || { count: 0, items: [] };
+  const f27 = raw.f27_pdi_issue || { hasIssue: false, causeActions: [] };
+  const f28 = raw.f28_field_complaints || { hasIssue: false, causeActions: [] };
+  const f29 = raw.f29_sop_non_adherence || { hasIssue: false, causeActions: [] };
+  const f30 = raw.f30_fixture_issue || { hasIssue: false, causeActions: [] };
+  const f31 = raw.f31_pallet_trolley_issue || { hasIssue: false, causeActions: [] };
+  const f32 = raw.f32_material_shortage || { hasIssue: false, quantity: 0, causeActions: [] };
+  const f33 = raw.f33_other_critical_issue || { issue: { hasIssue: false, causeActions: [] }, field1: '', field2: '' };
+
+  return {
+    id: raw.id,
+    date,
+    createdBy: raw.submitted_by || 'Admin',
+    safety: (f01.entries || []) as any[],
+    customerRejectionCount: f02.count || 0,
+    customerRejections: (f02.items || []) as any[],
+    production: (raw.f03_production || []) as any[],
+    cycleTime: { front: f04.front || 0, rear: f04.rear || 0, causeActions: f04.causeActions || [] },
+    perManPerDay: { target: f05.target || 6, actual: f05.actual || 0, causeActions: f05.causeActions || [] },
+    overtime: f06 as any[],
+    cumulativeOT: { yesterdayOT: f07.yesterdayOT || 0, previousTotal: f07.previousTotal || 0, todayCumulative: f07.todayCumulative || 0 },
+    dispatch: (raw.f08_dispatch || []) as any[],
+    productionPlanAdherence: { target: f09.target || 95, actual: f09.actual || 0, causeActions: f09.causeActions || [] },
+    scheduleAdherence: { target: f10.target || 100, actual: f10.actual || 0, causeActions: f10.causeActions || [] },
+    materialShortageLoss: { target: f11.target || 0, actual: f11.actual || 0, causeActions: f11.causeActions || [] },
+    lineQualityIssues: { target: f12.target || 0, actual: f12.actual || 0, causeActions: f12.causeActions || [] },
+    incomingMaterialQualityImpact: { target: f13.target || 0, actual: f13.actual || 0, causeActions: f13.causeActions || [] },
+    absenteeism: { target: f14.target || 0, actual: f14.actual || 0, causeActions: f14.causeActions || [] },
+    machineBreakdown: { target: f15.target || 30, actual: f15.actual || 0, causeActions: f15.causeActions || [] },
+    utilities: {
+      electricityKVAH: f16.electricityKVAH || 0,
+      electricityShift: f16.electricityShift || 'A',
+      dieselLTR: f16.dieselLTR || 0,
+      dieselShift: f16.dieselShift || 'A',
+      powerFactor: f16.powerFactor || 0,
+      cumulativeElectricity: f16.cumulativeElectricity || 0,
+      cumulativeDiesel: f16.cumulativeDiesel || 0,
+    },
+    sales: { dailySales: f21.dailySales || 0, cumulativeSales: f21.cumulativeSales || 0 },
+    training: { dailyHours: f22.dailyHours || 0, cumulativeHours: f22.cumulativeHours || 0, topic: f22.topic || '' },
+    qualityRatios: {
+      firstPassOKRatio: f24.firstPassOKRatio || 0,
+      firstPassCauseActions: f24.firstPassCauseActions || [],
+      pdiRatio: f24.pdiRatio || 0,
+      pdiCauseActions: f24.pdiCauseActions || [],
+    },
+    supplierRejectionCount: f26.count || 0,
+    supplierRejections: (f26.items || []) as any[],
+    pdiIssues: { hasIssue: f27.hasIssue || false, causeActions: f27.causeActions || [] },
+    fieldComplaints: { hasIssue: f28.hasIssue || false, causeActions: f28.causeActions || [] },
+    sopNonAdherence: { hasIssue: f29.hasIssue || false, causeActions: f29.causeActions || [] },
+    fixtureIssues: { hasIssue: f30.hasIssue || false, causeActions: f30.causeActions || [] },
+    palletTrolleyIssues: { hasIssue: f31.hasIssue || false, causeActions: f31.causeActions || [] },
+    materialShortageIssue: { hasIssue: f32.hasIssue || false, quantity: f32.quantity || 0, causeActions: f32.causeActions || [] },
+    otherCriticalIssue: { hasIssue: (f33.issue || {}).hasIssue || false, causeActions: (f33.issue || {}).causeActions || [] },
+    otherField1: f33.field1 || raw.f34_otherField1 || '',
+    otherField2: f33.field2 || raw.f35_otherField2 || '',
+  } as unknown as DailyEntry;
+}
+
 // ─── Export Utilities ────────────────────────────────────────────────────────
-function generateExportRows(d: DailyEntry, partTypes: { id: string; name: string }[]) {
+function generateExportRows(d: DailyEntry, ml: MasterLookups) {
   const rows: (string | number)[][] = [
     ['SI', 'Check Points', 'MP', 'Target', 'Actual / Value', 'Probable Causes', 'Action Planned', 'Responsible', 'Target Date'],
   ];
@@ -161,7 +257,7 @@ function generateExportRows(d: DailyEntry, partTypes: { id: string; name: string
   }
 
   const prod = d.production || [];
-  const grouped = partTypes.map(pt => {
+  const grouped = ml.partTypes.map(pt => {
     const item = prod.find(p => p.partTypeId === pt.id);
     return { name: pt.name, target: item?.target || 0, actual: item?.actual || 0 };
   });
@@ -169,25 +265,40 @@ function generateExportRows(d: DailyEntry, partTypes: { id: string; name: string
   const totalA = grouped.reduce((s, g) => s + g.actual, 0);
   const ot = d.overtime || [];
   const otTotal = ot.reduce((s, e) => s + e.hours, 0);
-  const ct = d.cycleTime;
-  const pm = d.perManPerDay;
-  const cot = d.cumulativeOT;
-  const u = d.utilities;
-  const s2 = d.sales;
-  const t = d.training;
-  const q = d.qualityRatios;
+  
+  // Safe extraction with defaults for nested objects
+  const ct = d.cycleTime || { front: 0, rear: 0, causeActions: [] };
+  const pm = d.perManPerDay || { target: 6, actual: 0, causeActions: [] };
+  const cot = d.cumulativeOT || { todayCumulative: 0, previousTotal: 0, yesterdayOT: 0 };
+  const u = d.utilities || { electricityKVAH: 0, electricityShift: 'A', dieselLTR: 0, dieselShift: 'A', powerFactor: 0, cumulativeElectricity: 0, cumulativeDiesel: 0 };
+  const s2 = d.sales || { dailySales: 0, cumulativeSales: 0 };
+  const t = d.training || { dailyHours: 0, cumulativeHours: 0, topic: '' };
+  const q = d.qualityRatios || { firstPassOKRatio: 0, firstPassCauseActions: [], pdiRatio: 0, pdiCauseActions: [] };
+  const ppa = d.productionPlanAdherence || { target: 95, actual: 0, causeActions: [] };
+  const sa = d.scheduleAdherence || { target: 100, actual: 0, causeActions: [] };
+  const msl = d.materialShortageLoss || { target: 0, actual: 0, causeActions: [] };
+  const lqi = d.lineQualityIssues || { target: 0, actual: 0, causeActions: [] };
+  const imqi = d.incomingMaterialQualityImpact || { target: 0, actual: 0, causeActions: [] };
+  const abs = d.absenteeism || { target: 0, actual: 0, causeActions: [] };
+  const mb = d.machineBreakdown || { target: 30, actual: 0, causeActions: [] };
+  const pdiI = d.pdiIssues || { hasIssue: false, causeActions: [] };
+  const fc = d.fieldComplaints || { hasIssue: false, causeActions: [] };
+  const sna = d.sopNonAdherence || { hasIssue: false, causeActions: [] };
+  const fi = d.fixtureIssues || { hasIssue: false, causeActions: [] };
+  const pti = d.palletTrolleyIssues || { hasIssue: false, causeActions: [] };
+
   const cr = d.customerRejections || [];
   const sr = d.supplierRejections || [];
   const safetyCA = (d.safety || []).flatMap(e => e.causeActions || []);
 
   addRow(1, 'Last day accident/Incident/Near Miss in nos. (Reported)', 'S', '0',
-    (d.safety || []).length > 0 ? (d.safety || []).map(e => `${e.type} (${e.count})`).join(', ') : '0',
+    (d.safety || []).length > 0 ? (d.safety || []).map(e => `${e.type} (${e.count})`).join(' | ') : '0',
     flatLines(safetyCA, 'cause'), flatLines(safetyCA, 'action'), flatLines(safetyCA, 'responsible'), flatLines(safetyCA, 'targetDate'));
   addRow(2, 'Last day Customer rejection (TML | ALW | PNR)', 'Q', '0 PPM',
-    d.customerRejectionCount > 0 ? cr.map(r => r.reason).join(', ') : '0',
+    d.customerRejectionCount > 0 ? cr.map(r => r.reason).join(' | ') : '0',
     cr.map(r => r.reason).join(' | ') || '—', '—', '—', '—');
   addRow(3, 'Last Day Production', 'P', totalT,
-    `${totalA}/${totalT} | ${grouped.map(g => `${g.name}: ${g.actual}/${g.target}`).join(', ')}`,
+    `${totalA}/${totalT} | ${grouped.map(g => `${g.name}: ${g.actual}/${g.target}`).join(' | ')}`,
     '—', '—', '—', '—');
   addRow(4, 'Cycle Time (Front / Rear)', 'P', '<2 Min', `F:${ct.front}m | R:${ct.rear}m`,
     flatLines(ct.causeActions || [], 'cause'), flatLines(ct.causeActions || [], 'action'),
@@ -197,33 +308,34 @@ function generateExportRows(d: DailyEntry, partTypes: { id: string; name: string
     flatLines(pm.causeActions || [], 'responsible'), flatLines(pm.causeActions || [], 'targetDate'));
   addRow(6, 'Last day OT hours (Prd,QA,Main,Mater,Engg,Planning)', 'C', '0',
     otTotal > 0 ? `${otTotal} hrs` : '0',
-    ot.map(e => e.reason).filter(Boolean).join(' | ') || '—', '—', '—', '—');
+    ot.map(e => `${byId(ml.departments, e.departmentId || '', e.departmentId || '?')}: ${e.hours}h — ${e.reason || ''}`).join(' | ') || '—',
+    '—', '—', '—');
   addRow(7, 'Cumulative OT hours', 'C', '—', `${cot.todayCumulative} hrs`, '—', '—', '—', '—');
   addRow(8, 'Last Day Dispatch (TML | ALW | PNR)', 'S', '—',
-    (d.dispatch || []).map(e => `${e.customerId}: ${e.quantity}`).join(' | ') || '—', '—', '—', '—', '—');
-  addRow(9, 'Production plan adherance %age (Yesterday)', 'P', pct(d.productionPlanAdherence.target), pct(d.productionPlanAdherence.actual),
-    flatLines(d.productionPlanAdherence.causeActions || [], 'cause'), flatLines(d.productionPlanAdherence.causeActions || [], 'action'),
-    flatLines(d.productionPlanAdherence.causeActions || [], 'responsible'), flatLines(d.productionPlanAdherence.causeActions || [], 'targetDate'));
-  addRow(10, 'Ontime In Full schedule adherance %age (Yesterday)', 'D', pct(d.scheduleAdherence.target), pct(d.scheduleAdherence.actual),
-    flatLines(d.scheduleAdherence.causeActions || [], 'cause'), flatLines(d.scheduleAdherence.causeActions || [], 'action'),
-    flatLines(d.scheduleAdherence.causeActions || [], 'responsible'), flatLines(d.scheduleAdherence.causeActions || [], 'targetDate'));
+    (d.dispatch || []).map(e => `${byId(ml.customers, e.customerId, byIdCode(ml.customers, e.customerId))}: ${e.quantity}`).join(' | ') || '—', '—', '—', '—', '—');
+  addRow(9, 'Production plan adherance %age (Yesterday)', 'P', pct(ppa.target), pct(ppa.actual),
+    flatLines(ppa.causeActions || [], 'cause'), flatLines(ppa.causeActions || [], 'action'),
+    flatLines(ppa.causeActions || [], 'responsible'), flatLines(ppa.causeActions || [], 'targetDate'));
+  addRow(10, 'Ontime In Full schedule adherance %age (Yesterday)', 'D', pct(sa.target), pct(sa.actual),
+    flatLines(sa.causeActions || [], 'cause'), flatLines(sa.causeActions || [], 'action'),
+    flatLines(sa.causeActions || [], 'responsible'), flatLines(sa.causeActions || [], 'targetDate'));
   addRow(11, 'Production hours loss for material shortage', 'P', '0',
-    d.materialShortageLoss.actual > 0 ? `${d.materialShortageLoss.actual} hrs` : '0',
-    flatLines(d.materialShortageLoss.causeActions || [], 'cause'), flatLines(d.materialShortageLoss.causeActions || [], 'action'),
-    flatLines(d.materialShortageLoss.causeActions || [], 'responsible'), flatLines(d.materialShortageLoss.causeActions || [], 'targetDate'));
-  addRow(12, 'Line Quality Issue', 'P', '0', d.lineQualityIssues.actual,
-    flatLines(d.lineQualityIssues.causeActions || [], 'cause'), flatLines(d.lineQualityIssues.causeActions || [], 'action'),
-    flatLines(d.lineQualityIssues.causeActions || [], 'responsible'), flatLines(d.lineQualityIssues.causeActions || [], 'targetDate'));
-  addRow(13, 'Production line affected due to poor Quality of incoming material', 'Q', '0', d.incomingMaterialQualityImpact.actual,
-    flatLines(d.incomingMaterialQualityImpact.causeActions || [], 'cause'), flatLines(d.incomingMaterialQualityImpact.causeActions || [], 'action'),
-    flatLines(d.incomingMaterialQualityImpact.causeActions || [], 'responsible'), flatLines(d.incomingMaterialQualityImpact.causeActions || [], 'targetDate'));
-  addRow(14, 'Unauthorised absentisim (Prd & Others)', 'M', '0', d.absenteeism.actual,
-    flatLines(d.absenteeism.causeActions || [], 'cause'), flatLines(d.absenteeism.causeActions || [], 'action'),
-    flatLines(d.absenteeism.causeActions || [], 'responsible'), flatLines(d.absenteeism.causeActions || [], 'targetDate'));
+    msl.actual > 0 ? `${msl.actual} hrs` : '0',
+    flatLines(msl.causeActions || [], 'cause'), flatLines(msl.causeActions || [], 'action'),
+    flatLines(msl.causeActions || [], 'responsible'), flatLines(msl.causeActions || [], 'targetDate'));
+  addRow(12, 'Line Quality Issue', 'P', '0', lqi.actual,
+    flatLines(lqi.causeActions || [], 'cause'), flatLines(lqi.causeActions || [], 'action'),
+    flatLines(lqi.causeActions || [], 'responsible'), flatLines(lqi.causeActions || [], 'targetDate'));
+  addRow(13, 'Production line affected due to poor Quality of incoming material', 'Q', '0', imqi.actual,
+    flatLines(imqi.causeActions || [], 'cause'), flatLines(imqi.causeActions || [], 'action'),
+    flatLines(imqi.causeActions || [], 'responsible'), flatLines(imqi.causeActions || [], 'targetDate'));
+  addRow(14, 'Unauthorised absentisim (Prd & Others)', 'M', '0', abs.actual,
+    flatLines(abs.causeActions || [], 'cause'), flatLines(abs.causeActions || [], 'action'),
+    flatLines(abs.causeActions || [], 'responsible'), flatLines(abs.causeActions || [], 'targetDate'));
   addRow(15, 'Breakdown of machine', 'P', '30 min max',
-    d.machineBreakdown.actual > 0 ? `${d.machineBreakdown.actual} min` : '0',
-    flatLines(d.machineBreakdown.causeActions || [], 'cause'), flatLines(d.machineBreakdown.causeActions || [], 'action'),
-    flatLines(d.machineBreakdown.causeActions || [], 'responsible'), flatLines(d.machineBreakdown.causeActions || [], 'targetDate'));
+    mb.actual > 0 ? `${mb.actual} min` : '0',
+    flatLines(mb.causeActions || [], 'cause'), flatLines(mb.causeActions || [], 'action'),
+    flatLines(mb.causeActions || [], 'responsible'), flatLines(mb.causeActions || [], 'targetDate'));
   addRow(16, 'Unit consumption Last Day (KVAH)', 'C', '—', `${u.electricityKVAH} kVAh (Shift ${u.electricityShift})`, '—', '—', '—', '—');
   addRow(17, 'Unit Consumption Till date (YTD)', 'C', '—', `${u.cumulativeElectricity} kVAh`, '—', '—', '—', '—');
   addRow(18, 'Diesel consumption Last Day (LTR)', 'C', '0', `${u.dieselLTR} L (Shift ${u.dieselShift})`, '—', '—', '—', '—');
@@ -239,23 +351,23 @@ function generateExportRows(d: DailyEntry, partTypes: { id: string; name: string
     flatLines(q.pdiCauseActions || [], 'cause'), flatLines(q.pdiCauseActions || [], 'action'),
     flatLines(q.pdiCauseActions || [], 'responsible'), flatLines(q.pdiCauseActions || [], 'targetDate'));
   addRow(26, 'Last day supplier rejection', 'Q', '0 PPM',
-    d.supplierRejectionCount > 0 ? sr.map(r => r.reason || r.supplierId).join(', ') : '0',
-    sr.map(r => r.reason).join(' | ') || '—', '—', '—', '—');
-  addRow(27, 'Last Day PDI Issue', 'Q', '0', yesNo(d.pdiIssues.hasIssue),
-    flatLines(d.pdiIssues.causeActions || [], 'cause'), flatLines(d.pdiIssues.causeActions || [], 'action'),
-    flatLines(d.pdiIssues.causeActions || [], 'responsible'), flatLines(d.pdiIssues.causeActions || [], 'targetDate'));
-  addRow(28, 'Last day field complaints/Issue reported in numbers', 'Q', '0 Nos', yesNo(d.fieldComplaints.hasIssue),
-    flatLines(d.fieldComplaints.causeActions || [], 'cause'), flatLines(d.fieldComplaints.causeActions || [], 'action'),
-    flatLines(d.fieldComplaints.causeActions || [], 'responsible'), flatLines(d.fieldComplaints.causeActions || [], 'targetDate'));
-  addRow(29, 'Is there any SOP non adherance found in yesterdays LPA audit', 'Q', '—', yesNo(d.sopNonAdherence.hasIssue),
-    flatLines(d.sopNonAdherence.causeActions || [], 'cause'), flatLines(d.sopNonAdherence.causeActions || [], 'action'),
-    flatLines(d.sopNonAdherence.causeActions || [], 'responsible'), flatLines(d.sopNonAdherence.causeActions || [], 'targetDate'));
-  addRow(30, 'Line Issue/Stop Due to fixtures', 'D', '0', yesNo(d.fixtureIssues.hasIssue),
-    flatLines(d.fixtureIssues.causeActions || [], 'cause'), flatLines(d.fixtureIssues.causeActions || [], 'action'),
-    flatLines(d.fixtureIssues.causeActions || [], 'responsible'), flatLines(d.fixtureIssues.causeActions || [], 'targetDate'));
-  addRow(31, 'Any Issue Related to Pallets Or Trolley (Internal & External)', 'P', '0', yesNo(d.palletTrolleyIssues.hasIssue),
-    flatLines(d.palletTrolleyIssues.causeActions || [], 'cause'), flatLines(d.palletTrolleyIssues.causeActions || [], 'action'),
-    flatLines(d.palletTrolleyIssues.causeActions || [], 'responsible'), flatLines(d.palletTrolleyIssues.causeActions || [], 'targetDate'));
+    d.supplierRejectionCount > 0 ? sr.map(r => r.reason || byId(ml.suppliers, r.supplierId || '')).join(' | ') : '0',
+    sr.map(r => `${byId(ml.suppliers, r.supplierId || '', r.supplierId || '?')}: ${r.reason}`).join(' | ') || '—', '—', '—', '—');
+  addRow(27, 'Last Day PDI Issue', 'Q', '0', yesNo(pdiI.hasIssue),
+    flatLines(pdiI.causeActions || [], 'cause'), flatLines(pdiI.causeActions || [], 'action'),
+    flatLines(pdiI.causeActions || [], 'responsible'), flatLines(pdiI.causeActions || [], 'targetDate'));
+  addRow(28, 'Last day field complaints/Issue reported in numbers', 'Q', '0 Nos', yesNo(fc.hasIssue),
+    flatLines(fc.causeActions || [], 'cause'), flatLines(fc.causeActions || [], 'action'),
+    flatLines(fc.causeActions || [], 'responsible'), flatLines(fc.causeActions || [], 'targetDate'));
+  addRow(29, 'Is there any SOP non adherance found in yesterdays LPA audit', 'Q', '—', yesNo(sna.hasIssue),
+    flatLines(sna.causeActions || [], 'cause'), flatLines(sna.causeActions || [], 'action'),
+    flatLines(sna.causeActions || [], 'responsible'), flatLines(sna.causeActions || [], 'targetDate'));
+  addRow(30, 'Line Issue/Stop Due to fixtures', 'D', '0', yesNo(fi.hasIssue),
+    flatLines(fi.causeActions || [], 'cause'), flatLines(fi.causeActions || [], 'action'),
+    flatLines(fi.causeActions || [], 'responsible'), flatLines(fi.causeActions || [], 'targetDate'));
+  addRow(31, 'Any Issue Related to Pallets Or Trolley (Internal & External)', 'P', '0', yesNo(pti.hasIssue),
+    flatLines(pti.causeActions || [], 'cause'), flatLines(pti.causeActions || [], 'action'),
+    flatLines(pti.causeActions || [], 'responsible'), flatLines(pti.causeActions || [], 'targetDate'));
 
   let sl = 32;
   if (d.materialShortageIssue) {
@@ -276,11 +388,10 @@ function generateExportRows(d: DailyEntry, partTypes: { id: string; name: string
   return rows;
 }
 
-async function exportToExcel(d: DailyEntry, partTypes: { id: string; name: string }[]) {
+async function exportToExcel(d: DailyEntry, ml: MasterLookups) {
   // @ts-ignore
   const XLSX = await import('https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs');
-  const rows = generateExportRows(d, partTypes);
-
+  const rows = generateExportRows(d, ml);
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!cols'] = [
     { wch: 4 }, { wch: 46 }, { wch: 5 }, { wch: 12 },
@@ -291,13 +402,36 @@ async function exportToExcel(d: DailyEntry, partTypes: { id: string; name: strin
   XLSX.writeFile(wb, `Daily_Report_${d.date}.xlsx`);
 }
 
-async function exportToPdf(d: DailyEntry, partTypes: { id: string; name: string }[]) {
+async function exportMonthlyExcel(monthKey: string, ml: MasterLookups) {
+  const rawReports = await api.getReportsByMonth(monthKey);
+  if (!rawReports || rawReports.length === 0) {
+    throw new Error('No reports found for the selected month.');
+  }
+  rawReports.sort((a: any, b: any) => (a.report_date || a.date || '').localeCompare(b.report_date || b.date || ''));
+  // @ts-ignore
+  const XLSX = await import('https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs');
+  const wb = XLSX.utils.book_new();
+  rawReports.forEach((raw: any) => {
+    const d = mapRawToDailyEntry(raw);
+    const rows = generateExportRows(d, ml);
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 4 }, { wch: 46 }, { wch: 5 }, { wch: 12 },
+      { wch: 30 }, { wch: 28 }, { wch: 28 }, { wch: 14 }, { wch: 14 },
+    ];
+    const sheetName = d.date || 'Unknown';
+    XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
+  });
+  XLSX.writeFile(wb, `Monthly_Report_${monthKey}.xlsx`);
+}
+
+async function exportToPdf(d: DailyEntry, ml: MasterLookups) {
   const { jsPDF } = await import('jspdf');
   // @ts-ignore
   const autoTable = (await import('jspdf-autotable')).default;
 
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-  const rows = generateExportRows(d, partTypes);
+  const rows = generateExportRows(d, ml);
   const head = rows.slice(0, 1);
   const body = rows.slice(1);
 
@@ -333,7 +467,10 @@ export default function HistoryView() {
   const [notFound, setNotFound] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const { partTypes } = useMasterData();
+  const [monthKey, setMonthKey] = useState(() => new Date().toISOString().slice(0, 7));
+  const [monthlyExporting, setMonthlyExporting] = useState(false);
+  const { partTypes, customers, suppliers, departments } = useMasterData();
+  const ml: MasterLookups = { partTypes, customers, suppliers, departments };
 
   useEffect(() => {
     (async () => {
@@ -412,13 +549,31 @@ export default function HistoryView() {
             {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
             <span className="ml-1.5">{loading ? 'Loading...' : 'View Report'}</span>
           </Button>
+          {/* Monthly report picker */}
+          <div className="flex items-center gap-1 border border-[#E5E5E5] rounded-lg px-2 py-1">
+            <TableProperties className="w-3.5 h-3.5 text-[#C9A962]" />
+            <input type="month" value={monthKey} onChange={e => setMonthKey(e.target.value)}
+              className="text-xs font-medium text-[#1A1A1A] outline-none bg-transparent" />
+            <Button size="sm" variant="outline"
+              className="h-7 text-[10px] border-[#C9A962] text-[#C9A962] font-semibold px-2"
+              disabled={monthlyExporting}
+              onClick={async () => {
+                setMonthlyExporting(true);
+                try { await exportMonthlyExcel(monthKey, ml); toast.success('Monthly report downloaded!'); }
+                catch (e: any) { toast.error(e.message || 'Monthly export failed'); }
+                finally { setMonthlyExporting(false); }
+              }}>
+              {monthlyExporting ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+              <span className="ml-1">{monthlyExporting ? '...' : 'Monthly'}</span>
+            </Button>
+          </div>
           {d && (
             <>
               <Button variant="outline" size="sm"
                 className="h-9 border-[#C9A962] text-[#C9A962] font-semibold"
                 onClick={async () => {
                   setExporting(true);
-                  try { await exportToPdf(report!, partTypes); toast.success('PDF exported!'); }
+                  try { await exportToPdf(report!, ml); toast.success('PDF exported!'); }
                   catch { toast.error('PDF export failed'); }
                   setExporting(false);
                 }} disabled={exporting || deleting}>
@@ -429,7 +584,7 @@ export default function HistoryView() {
                 className="h-9 border-[#C9A962] text-[#C9A962] font-semibold"
                 onClick={async () => {
                   setExporting(true);
-                  try { await exportToExcel(report!, partTypes); toast.success('Excel exported!'); }
+                  try { await exportToExcel(report!, ml); toast.success('Excel exported!'); }
                   catch { toast.error('Excel export failed'); }
                   setExporting(false);
                 }} disabled={exporting || deleting}>
@@ -479,14 +634,16 @@ export default function HistoryView() {
         const totalA = grouped.reduce((s, g) => s + g.actual, 0);
         const ot = d.overtime || [];
         const otTotal = ot.reduce((s, e) => s + e.hours, 0);
-        const ct = d.cycleTime;
-        const pm = d.perManPerDay;
-        const cot = d.cumulativeOT;
+        
+        // Safe extraction with defaults for nested objects in UI
+        const ct = d.cycleTime || { front: 0, rear: 0, causeActions: [] };
+        const pm = d.perManPerDay || { target: 6, actual: 0, causeActions: [] };
+        const cot = d.cumulativeOT || { todayCumulative: 0, previousTotal: 0, yesterdayOT: 0 };
         const disp = d.dispatch || [];
-        const u = d.utilities;
-        const s2 = d.sales;
-        const t = d.training;
-        const q = d.qualityRatios;
+        const u = d.utilities || { electricityKVAH: 0, electricityShift: 'A', dieselLTR: 0, dieselShift: 'A', powerFactor: 0, cumulativeElectricity: 0, cumulativeDiesel: 0 };
+        const s2 = d.sales || { dailySales: 0, cumulativeSales: 0 };
+        const t = d.training || { dailyHours: 0, cumulativeHours: 0, topic: '' };
+        const q = d.qualityRatios || { firstPassOKRatio: 0, firstPassCauseActions: [], pdiRatio: 0, pdiCauseActions: [] };
         const cr = d.customerRejections || [];
         const sr = d.supplierRejections || [];
 
@@ -634,7 +791,7 @@ export default function HistoryView() {
                         checkpoint="Last day OT hours (Prd,QA,Main,Mater,Engg,Planning)" target="0"
                         valueCell={<ValCell val={otTotal > 0 ? `${otTotal} hrs` : '0'}
                           bg={otTotal > 0 ? COLOR.warn : COLOR.ok} textColor={otTotal > 0 ? COLOR.warnText : COLOR.okText}
-                          sub={otTotal > 0 ? ot.map(e=>`Dept ${e.departmentId||'?'}: ${e.hours}h`).join(' · ') : undefined} />}
+                          sub={otTotal > 0 ? ot.map(e=>`${byId(ml.departments, e.departmentId||'','?')}: ${e.hours}h`).join(' · ') : undefined} />}
                         causesRows={ot.map(e=>e.reason).filter(Boolean).join('\n')||'—'}
                         actionRows="—" responsibleRows="—" targetDateRows="—" />
                     );
@@ -656,7 +813,7 @@ export default function HistoryView() {
                     return (
                       <ExcelRow key={n} sl={n} mp="S" isEven={n % 2 === 0}
                         checkpoint="Last Day Dispatch (TML | ALW | PNR)" target="—"
-                        valueCell={<ValCell val={disp.map(e=>`${partTypes[Number(e.customerId)-1]?.code}: ${e.quantity}`).join(' | ') +' | '+'Total: ' + disp.reduce((acc, d) => acc + d.quantity, 0)||'—'} bg={COLOR.na} />}
+                        valueCell={<ValCell val={(disp.map(e=>`${byId(ml.customers, e.customerId, byIdCode(ml.customers, e.customerId))}: ${e.quantity}`).join(' | ') + (disp.length ? ` | Total: ${disp.reduce((acc,d)=>acc+d.quantity,0)}` : '')) || '—'} bg={COLOR.na} />}
                         causesRows="—" actionRows="—" responsibleRows="—" targetDateRows="—" />
                     );
                   })()}
@@ -880,7 +1037,7 @@ export default function HistoryView() {
                         value={<>
                           {count > 0 ? `${count} rejection${count>1?'s':''}` : '0'}
                           {count > 0 && <div className="text-[9px] font-normal opacity-70 mt-0.5">
-                            {sr.map(r=>r.reason||r.supplierId).join(' · ')}
+                            {sr.map(r=>`${byId(ml.suppliers,r.supplierId||'',r.supplierId||'?')}: ${r.reason}`).join(' · ')}
                           </div>}
                         </>} />
                     );

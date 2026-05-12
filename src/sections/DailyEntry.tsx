@@ -15,6 +15,8 @@ import {
   Mail,
   Loader2,
   Send,
+  Upload,
+  FileDown,
 } from 'lucide-react';
 // import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -31,6 +33,7 @@ import { toast } from 'sonner';
 import { useDailyEntry } from '@/context/DailyEntryContext';
 import { useMasterData } from '@/context/MasterDataContext';
 import { notifyOwner as notifyOwnerApi } from '@/lib/api';
+import { downloadImportTemplate, parseImportedExcel } from '@/lib/excelImport';
 import type {
   // DailyEntry as DailyEntryType,
   SafetyEntry,
@@ -615,7 +618,26 @@ export default function DailyEntry() {
     resetForm,
     isAlreadySaved,
   } = useDailyEntry();
-  const { partTypes, customers, suppliers, machines, departments ,deptOwners} = useMasterData();
+  const { partTypes, customers, suppliers, machines, departments, deptOwners } = useMasterData();
+
+  const importRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const data = await parseImportedExcel(file, { partTypes, customers, suppliers, departments, machines });
+      setFormData(prev => ({ ...prev, ...data }));
+      toast.success('Excel data imported! Review fields and save.');
+    } catch (err: any) {
+      toast.error(`Import failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setImporting(false);
+      e.target.value = '';
+    }
+  };
 
   const getOwner = (sl: number) => deptOwners.find(o => o.sl === sl) || { name: '', email: '' };
 
@@ -798,6 +820,32 @@ export default function DailyEntry() {
             >
               <Calendar className="w-3 h-3" /> Change Date
             </button>
+            <div className="flex items-center gap-1">
+              {/* Download Template */}
+              <button
+                onClick={async () => {
+                  try {
+                    await downloadImportTemplate({ partTypes, customers, suppliers, departments, machines });
+                    toast.success('Template downloaded!');
+                  } catch { toast.error('Template download failed'); }
+                }}
+                className="text-[10px] text-[#C9A962] hover:text-white transition-colors font-medium flex items-center gap-1 border border-[#C9A962]/40 rounded px-2 py-1"
+                title="Download Excel template"
+              >
+                <FileDown className="w-3 h-3" /> Template
+              </button>
+              {/* Import Excel */}
+              <button
+                onClick={() => importRef.current?.click()}
+                disabled={importing || isAlreadySaved}
+                className="text-[10px] text-[#C9A962] hover:text-white transition-colors font-medium flex items-center gap-1 border border-[#C9A962]/40 rounded px-2 py-1 disabled:opacity-50"
+                title="Import from Excel template"
+              >
+                {importing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                {importing ? 'Importing...' : 'Import'}
+              </button>
+              <input ref={importRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportFile} />
+            </div>
           </div>
         </div>
 

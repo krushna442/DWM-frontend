@@ -57,6 +57,15 @@ export async function getLatestReport(): Promise<DailyEntry | null> {
   }
 }
 
+/** Fetch the last inserted report of the current month (to prefill cumulative fields) */
+export async function getLastInsertedReport(): Promise<DailyEntry | null> {
+  try {
+    return req('GET', '/reports/last-inserted');
+  } catch {
+    return null;
+  }
+}
+
 /** Fetch a report by date (for History/Update page) */
 export async function getReport(date: string): Promise<DailyEntry> {
   return req('GET', `/reports/${date}`);
@@ -90,6 +99,15 @@ export async function listReports(page = 1, limit = 30): Promise<{
   limit: number;
 }> {
   return req('GET', `/reports?page=${page}&limit=${limit}`);
+}
+
+/** Fetch all reports for a given month (YYYY-MM) — backend returns { success, data: rawRecord[] } */
+export async function getReportsByMonth(monthKey: string): Promise<any[]> {
+  const result = await req<{ success: boolean; data: any[] }>('GET', `/reports/month/${monthKey}`);
+  // Handle both { success, data } envelope and plain array
+  if (result && Array.isArray((result as any).data)) return (result as any).data;
+  if (Array.isArray(result)) return result as any[];
+  return [];
 }
 
 /** Delete a report by date */
